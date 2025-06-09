@@ -1,0 +1,21 @@
+{
+  "reset_spectrum": "*RST",
+  "identify": "*IDN?",
+  "operation_complete_query": "*OPC?",
+  "set_center_frequency": "SENS:FREQ:CENT {value} {units}",
+  "set_span": "SENS:FREQ:SPAN {value} {units}",
+  "set_rbw": "SENS:BWID:RES {value} {units}",
+  "set_vbw": "SENS:BWID:VID {value} {units}",
+  "set_ref_level": "DISP:WIND:TRAC:Y:RLEV {value} DBM",
+  "set_ref_level_offset": "DISP:WIND:TRAC:Y:RLEV:OFFS {value}",
+  "set_peak_detector": "SENS:DET PEAK",
+  "peak_search": "CALC:{mark_name}:MAX",
+  "get_marker_power": "CALC:{mark_name}:Y?",
+  "get_marker_frequency": "CALC:{mark_name}:X?",
+  "get_rbw": "SENS:BWID:RES?",
+  "get_vbw": "SENS:BWID:VID?",
+  "get_span": "SENS:FREQ:SPAN?",
+  "get_ref_level": "DISP:WIND:TRAC:Y:RLEV?",
+  "get_ref_level_offset": "DISP:WIND:TRAC:Y:RLEV:OFFS?",
+  "take_screenshot": "MMEM:STOR:SCR {name}.png"
+}
