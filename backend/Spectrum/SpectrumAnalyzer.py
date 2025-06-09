@@ -1,6 +1,7 @@
 import socket
 import time
 import os
+from ftplib import FTP
 from .scpi_command_builder import SCPICommandBuilder
 
 
@@ -144,6 +145,25 @@ class SpectrumAnalyzer:
 
     def take_screenshot(self, name="screenshot"):
         self.send_and_wait(self.cmd.build("take_screenshot", name=name))
+
+    def download_screenshot_via_ftp(self, remote_filename="screenshot.png", local_path="screenshot.png"):
+        """
+        Downloads a screenshot file from the spectrum analyzer via FTP.
+        The screenshot must have already been saved using take_screenshot().
+        """
+        try:
+            print(f"Connecting to FTP at {self.ip_address}...")
+            ftp = FTP(self.ip_address)
+            ftp.login()  # anonymous login or use credentials if needed
+
+            with open(local_path, "wb") as f:
+                ftp.retrbinary(f"RETR {remote_filename}", f.write)
+
+            ftp.quit()
+            print(f"Screenshot saved to {local_path}")
+
+        except Exception as e:
+            raise IOError(f"Failed to download screenshot via FTP -> {e}")
 
 
 if __name__ == "__main__":
