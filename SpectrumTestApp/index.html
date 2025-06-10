@@ -1,10 +1,246 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+  <meta charset="UTF-8" />
+  <title>Spectrum Analyzer UI</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background-color: #121212;
+      color: #e0e0e0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      width: 100%;
+    }
+
+    .sidebar {
+      width: 45%;
+      max-width: 650px;
+      padding: 16px;
+      background-color: #1e1e1e;
+      overflow-y: auto;
+      border-right: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sidebar h2 {
+      margin: 0 0 8px;
+      color: #26a69a;
+    }
+
+    .section {
+      background-color: #2a2a2a;
+      padding: 12px;
+      border-radius: 8px;
+    }
+
+    .section h3 {
+      margin-top: 0;
+      font-size: 16px;
+      color: #80cbc4;
+      margin-bottom: 8px;
+    }
+
+    label {
+      margin-top: 10px;
+    }
+
+    input, select, button {
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background-color: #2e2e2e;
+      color: white;
+    }
+
+    button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 6px;
+      border: none;
+      background-color: #26a69a;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #2bbbad;
+    }
+
+    .response-panel {
+      flex-grow: 1;
+      padding: 20px;
+      background-color: #181818;
+      overflow-y: auto;
+    }
+
+    .response-panel h3 {
+      color: #ffcc80;
+      margin-top: 0;
+    }
+
+    pre {
+      background-color: #263238;
+      padding: 15px;
+      color: #c3e88d;
+      border-radius: 6px;
+      font-size: 13px;
+      overflow-x: auto;
+    }
+  </style>
 </head>
 <body>
-$END$
+  <div class="container">
+    <div class="sidebar">
+      <h2>Spectrum Analyzer</h2>
+
+      <div class="section">
+        <h3>Connection</h3>
+        <button onclick="send('/connect')">Connect</button>
+        <button onclick="send('/disconnect')">Disconnect</button>
+        <button onclick="send('/reset')">Reset</button>
+        <button onclick="send('/identify', 'GET')">Identify</button>
+      </div>
+
+      <div class="section">
+        <h3>Center Frequency</h3>
+        <label>Frequency:</label>
+        <input type="number" id="freqInput" />
+        <label>Units:</label>
+        <select id="freqUnits">
+          <option value="HZ">Hz</option>
+          <option value="KHZ">kHz</option>
+          <option value="MHZ">MHz</option>
+          <option value="GHZ">GHz</option>
+        </select>
+        <button onclick="setCenterFreq()">Set Frequency</button>
+      </div>
+
+      <div class="section">
+        <h3>Span / RBW / VBW</h3>
+        <label>Span:</label>
+        <input type="number" id="spanValue" />
+        <select id="spanUnits">
+          <option value="HZ">Hz</option>
+          <option value="KHZ">kHz</option>
+          <option value="MHZ">MHz</option>
+          <option value="GHZ">GHz</option>
+        </select>
+        <button onclick="postValue('/set_span', { value: getVal('spanValue'), units: getVal('spanUnits') })">Set Span</button>
+
+        <label>RBW:</label>
+        <input type="number" id="rbwValue" />
+        <select id="rbwUnits">
+          <option value="HZ">Hz</option>
+          <option value="KHZ">kHz</option>
+          <option value="MHZ">MHz</option>
+        </select>
+        <button onclick="postValue('/set_rbw', { value: getVal('rbwValue'), units: getVal('rbwUnits') })">Set RBW</button>
+
+        <label>VBW:</label>
+        <input type="number" id="vbwValue" />
+        <select id="vbwUnits">
+          <option value="HZ">Hz</option>
+          <option value="KHZ">kHz</option>
+          <option value="MHZ">MHz</option>
+        </select>
+        <button onclick="postValue('/set_vbw', { value: getVal('vbwValue'), units: getVal('vbwUnits') })">Set VBW</button>
+      </div>
+
+      <div class="section">
+        <h3>Reference Levels</h3>
+        <label>Ref Level (dBm):</label>
+        <input type="number" id="refLevel" />
+        <button onclick="postValue('/set_ref_level', { value: getVal('refLevel') })">Set Ref Level</button>
+
+        <label>Offset (dB):</label>
+        <input type="number" id="offset" />
+        <button onclick="postValue('/set_ref_level_offset', { value: getVal('offset') })">Set Offset</button>
+      </div>
+
+      <div class="section">
+        <h3>Detection & Markers</h3>
+        <button onclick="send('/set_peak_detector')">Set Peak Detector</button>
+        <button onclick="send('/peak_search')">Peak Search</button>
+        <button onclick="send('/get_marker_power', 'GET')">Get Marker Power</button>
+        <button onclick="send('/get_marker_frequency', 'GET')">Get Marker Frequency</button>
+      </div>
+
+      <div class="section">
+        <h3>Query Settings</h3>
+        <button onclick="send('/get_rbw', 'GET')">Get RBW</button>
+        <button onclick="send('/get_vbw', 'GET')">Get VBW</button>
+        <button onclick="send('/get_span', 'GET')">Get Span</button>
+        <button onclick="send('/get_ref_level', 'GET')">Get Ref Level</button>
+        <button onclick="send('/get_ref_level_offset', 'GET')">Get Offset</button>
+      </div>
+
+      <div class="section">
+        <h3>Screenshot</h3>
+        <label>Filename:</label>
+        <input type="text" id="screenshotName" value="screenshot" />
+        <button onclick="postValue('/take_screenshot', { name: getVal('screenshotName') })">Take Screenshot</button>
+        <button onclick="postValue('/download_screenshot')">Download Screenshot</button>
+      </div>
+    </div>
+
+    <div class="response-panel">
+      <h3>Response Output</h3>
+      <pre id="response">{"status": "waiting for action..."}</pre>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://localhost:8000";
+    const getVal = id => document.getElementById(id).value;
+
+    function showResponse(data) {
+      document.getElementById("response").innerText = JSON.stringify(data, null, 2);
+    }
+
+    async function send(endpoint, method = "POST") {
+      const res = await fetch(`${API}${endpoint}`, { method });
+      const data = await res.json();
+      showResponse(data);
+    }
+
+    async function postValue(endpoint, payload = {}) {
+      const res = await fetch(`${API}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      showResponse(data);
+    }
+
+    async function setCenterFreq() {
+      const freq = parseFloat(getVal("freqInput"));
+      const units = getVal("freqUnits");
+      let hzValue = freq;
+      if (units === "KHZ") hzValue *= 1e3;
+      if (units === "MHZ") hzValue *= 1e6;
+      if (units === "GHZ") hzValue *= 1e9;
+      await postValue("/set_center_freq", { freq: hzValue });
+    }
+  </script>
 </body>
 </html>
