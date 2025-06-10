@@ -13,7 +13,7 @@ class SpectrumAnalyzer:
         """
         Initialize the SpectrumAnalyzer.
         :param ip_address: IP address of the Spectrum Analyzer.
-        :param port: Port for socket connection. Defaults  to 5555 (for R&S FSC3)
+        :param port: Port for socket connection. Defaults to 5555 (for R&S FSC3)
         :param timeout: Timeout for socket operations in seconds. Defaults to 5.
         :param line_ending: Line termination character for SCPI commands. Defaults to '\n'.
         :param scpi_path: Path to the SCPI JSON definition file.
@@ -63,9 +63,6 @@ class SpectrumAnalyzer:
         """
         Send a SCPI command to the spectrum analyzer.
         :param command: SCPI command string.
-        :raises:
-            RuntimeError: If the analyzer is not connected.
-            IOError: If sending fails.
         :return: None
         """
         if not self.sock:
@@ -80,7 +77,7 @@ class SpectrumAnalyzer:
     def read_response(self) -> str:
         """
         Read response from the spectrum analyzer.
-        :return:
+        :return: str: Decoded response string.
         """
         if not self.sock:
             raise RuntimeError("No Spectrum Analyzer connected")
@@ -95,13 +92,25 @@ class SpectrumAnalyzer:
         except Exception as e:
             raise IOError(f"Failed to read response -> {e}")
 
-    def query(self, command):
+    def query(self, command) -> str:
+        """
+        Send a command and immediately read the response.
+        :param command: SCPI command.
+        :return: Response string.
+        """
         if not self.sock:
             raise RuntimeError("No Spectrum Analyzer connected")
         self.send_command(command)
         return self.read_response()
 
-    def send_and_wait(self, command, wait_for="1", timeout=3):
+    def send_and_wait(self, command, wait_for="1", timeout=3) -> bool:
+        """
+        Send a command and wait for completion (using *OPC?).
+        :param command: Command to send.
+        :param wait_for: Expected response. Defaults to "1".
+        :param timeout: Timeout in seconds. Defaults to 3.
+        :return: True if operation completes in time.
+        """
         self.send_command(command)
         self.send_command(self.cmd.build("operation_complete_query"))
         start = time.time()
@@ -117,64 +126,147 @@ class SpectrumAnalyzer:
         raise TimeoutError(f"Timeout waiting for operation to complete after: {command}")
 
     @property
-    def is_connected(self):
+    def is_connected(self) -> bool:
+        """
+        Check if the analyzer is currently connected.
+        :return: bool: True if connected.
+        """
         return self.sock is not None
 
     # ==========================
-    # Modular SCPI Commands
+    # SCPI Command Wrappers
     # ==========================
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset the spectrum analyzer."""
         self.send_and_wait(self.cmd.build("reset_spectrum"))
 
-    def identify(self):
+    def identify(self) -> str:
+        """
+        Query the identity of the spectrum analyzer.
+        :return: Spectrum model string.
+        """
         return self.query(self.cmd.build("identify"))
 
-    def set_center_frequency(self, freq_hz):
-        self.send_and_wait(self.cmd.build("set_center_frequency", value=freq_hz, units="HZ"))
+    def set_center_frequency(self, freq, units="HZ") -> None:
+        """
+        Set center frequency based on given frequency in specified units.
+        :param freq: Required center frequency.
+        :param units: Frequency units (HZ, KHZ, MHZ, GHZ). Defaults to "HZ".
+        :return: None.
+        """
+        self.send_and_wait(self.cmd.build("set_center_frequency", value=freq, units=units))
 
-    def set_span(self, value, units="HZ"):
-        self.send_and_wait(self.cmd.build("set_span", value=value, units=units))
+    def set_span(self, span, units="HZ") -> None:
+        """
+        Set frequency span in specified units.
+        :param span: Required frequency span.
+        :param units: Span units (HZ, KHZ, MHZ, GHZ). Defaults to "HZ".
+        :return: None.
+        """
+        self.send_and_wait(self.cmd.build("set_span", value=span, units=units))
 
-    def set_rbw(self, rbw_hz):
-        self.send_and_wait(self.cmd.build("set_rbw", value=rbw_hz, units="HZ"))
+    def set_rbw(self, rbw, units="HZ") -> None:
+        """
+        Set resolution bandwidth (RBW) in specified units.
+        :param rbw: Required RBW.
+        :param units: RBW units (HZ, KHZ, MHZ, GHZ). Defaults to "HZ".
+        :return: None.
+        """
+        self.send_and_wait(self.cmd.build("set_rbw", value=rbw, units=units))
 
-    def set_vbw(self, vbw_hz):
-        self.send_and_wait(self.cmd.build("set_vbw", value=vbw_hz, units="HZ"))
+    def set_vbw(self, vbw, units="HZ") -> None:
+        """
+        Set video bandwidth (VBW) in specified units.
+        :param vbw: Required VBW.
+        :param units: VBW units (HZ, KHZ, MHZ, GHZ). Defaults to "HZ".
+        :return: None.
+        """
+        self.send_and_wait(self.cmd.build("set_vbw", value=vbw, units=units))
 
-    def set_ref_level(self, ref_dbm):
+    def set_ref_level(self, ref_dbm) -> None:
+        """
+        Set reference level in dBm.
+        :param ref_dbm: Required reference level in dBm.
+        :return: None.
+        """
         self.send_and_wait(self.cmd.build("set_ref_level", value=ref_dbm))
 
-    def set_ref_level_offset(self, offset_db):
+    def set_ref_level_offset(self, offset_db) -> None:
+        """
+        Set reference level offset in dB.
+        :param offset_db: Required reference level offset in dB.
+        :return: None.
+        """
         self.send_and_wait(self.cmd.build("set_ref_level_offset", value=offset_db))
 
-    def set_peak_detector(self):
+    def set_peak_detector(self) -> None:
+        """
+        Set the detector to 'peak' mode.
+        :return: None.
+        """
         self.send_and_wait(self.cmd.build("set_peak_detector"))
 
-    def peak_search(self, mark_name="MARK1"):
+    def peak_search(self, mark_name="MARK1") -> None:
+        """
+        Trigger peak search using a marker.
+        :param mark_name: Marker name to set to peak. Defaults sets to "Marker 1".
+        :return: None.
+        """
         self.send_and_wait(self.cmd.build("peak_search", mark_name=mark_name))
 
-    def get_marker_power(self, mark_name="MARK1"):
+    def get_marker_power(self, mark_name="MARK1") -> str:
+        """
+        Get power value at a given marker in dBm.
+        :param mark_name: Required marker name to get its power level.
+        :return: Marker power level string.
+        """
         return self.query(self.cmd.build("get_marker_power", mark_name=mark_name))
 
-    def get_marker_frequency(self, mark_name="MARK1"):
+    def get_marker_frequency(self, mark_name="MARK1") -> str:
+        """
+        Get frequency value at a given marker.
+        :param mark_name: Required marker name to get its frequency.
+        :return: Marker frequency string.
+        """
         return self.query(self.cmd.build("get_marker_frequency", mark_name=mark_name))
 
-    def get_rbw(self):
+    def get_rbw(self) -> str:
+        """
+        Query resolution bandwidth (RBW).
+        :return: RBW string.
+        """
         return self.query(self.cmd.build("get_rbw"))
 
     def get_vbw(self):
+        """
+        Query video bandwidth (VBW).
+        :return: VBW string.
+        """
         return self.query(self.cmd.build("get_vbw"))
 
     def get_span(self):
+        """
+        Query frequency span.
+        :return: Frequency span string.
+        """
         return self.query(self.cmd.build("get_span"))
 
     def get_ref_level(self):
+        """
+        Query reference level.
+        :return: Reference level string.
+        """
         return self.query(self.cmd.build("get_ref_level"))
 
     def get_ref_level_offset(self):
+        """
+        Query reference level offset.
+        :return: Reference level offset string.
+        """
         return self.query(self.cmd.build("get_ref_level_offset"))
 
+    # not working yet. ToDo: implement this feature.
     def take_screenshot(self, name="screenshot"):
         self.send_and_wait(self.cmd.build("take_screenshot", name=name))
 
