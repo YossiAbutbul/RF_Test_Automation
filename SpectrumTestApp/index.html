@@ -3,10 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <title>Spectrum Analyzer UI</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    * {
-      box-sizing: border-box;
-    }
     body {
       margin: 0;
       font-family: "Segoe UI", sans-serif;
@@ -16,94 +14,29 @@
       height: 100vh;
       overflow: hidden;
     }
-
-    .container {
-      display: flex;
-      width: 100%;
-    }
-
+    .container { display: flex; width: 100%; }
     .sidebar {
-      width: 45%;
-      max-width: 650px;
-      padding: 16px;
-      background-color: #1e1e1e;
-      overflow-y: auto;
-      border-right: 1px solid #333;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
+      width: 45%; max-width: 650px; padding: 16px;
+      background-color: #1e1e1e; overflow-y: auto;
+      border-right: 1px solid #333; display: flex; flex-direction: column; gap: 16px;
     }
-
-    .sidebar h2 {
-      margin: 0 0 8px;
-      color: #26a69a;
-    }
-
-    .section {
-      background-color: #2a2a2a;
-      padding: 12px;
-      border-radius: 8px;
-    }
-
-    .section h3 {
-      margin-top: 0;
-      font-size: 16px;
-      color: #80cbc4;
-      margin-bottom: 8px;
-    }
-
-    label {
-      margin-top: 10px;
-    }
-
+    .sidebar h2 { color: #26a69a; }
+    .section { background-color: #2a2a2a; padding: 12px; border-radius: 8px; }
+    .section h3 { margin-top: 0; font-size: 16px; color: #80cbc4; margin-bottom: 8px; }
     input, select, button {
-      font-size: 14px;
-      margin-bottom: 8px;
+      width: 100%; padding: 6px; margin-bottom: 8px;
+      border-radius: 4px; border: 1px solid #555;
+      background-color: #2e2e2e; color: white;
     }
-
-    input, select {
-      width: 100%;
-      padding: 6px;
-      border-radius: 4px;
-      border: 1px solid #555;
-      background-color: #2e2e2e;
-      color: white;
-    }
-
-    button {
-      width: 100%;
-      padding: 8px;
-      margin-top: 6px;
-      border: none;
-      background-color: #26a69a;
-      color: white;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background-color: #2bbbad;
-    }
-
+    button { background-color: #26a69a; cursor: pointer; }
+    button:hover { background-color: #2bbbad; }
     .response-panel {
-      flex-grow: 1;
-      padding: 20px;
-      background-color: #181818;
-      overflow-y: auto;
+      flex-grow: 1; padding: 20px; background-color: #181818; overflow-y: auto;
     }
-
-    .response-panel h3 {
-      color: #ffcc80;
-      margin-top: 0;
-    }
-
+    .response-panel h3 { color: #ffcc80; margin-top: 0; }
     pre {
-      background-color: #263238;
-      padding: 15px;
-      color: #c3e88d;
-      border-radius: 6px;
-      font-size: 13px;
-      overflow-x: auto;
+      background-color: #263238; padding: 15px; color: #c3e88d;
+      border-radius: 6px; font-size: 13px; overflow-x: auto;
     }
   </style>
 </head>
@@ -144,7 +77,7 @@
           <option value="MHZ">MHz</option>
           <option value="GHZ">GHz</option>
         </select>
-        <button onclick="postValue('/set_span', { value: getVal('spanValue'), units: getVal('spanUnits') })">Set Span</button>
+        <button onclick="updateSpan()">Set Span</button>
 
         <label>RBW:</label>
         <input type="number" id="rbwValue" />
@@ -194,53 +127,174 @@
       </div>
 
       <div class="section">
-        <h3>Screenshot</h3>
-        <label>Filename:</label>
+        <h3>Screenshots</h3>
         <input type="text" id="screenshotName" value="screenshot" />
         <button onclick="postValue('/take_screenshot', { name: getVal('screenshotName') })">Take Screenshot</button>
         <button onclick="postValue('/download_screenshot')">Download Screenshot</button>
       </div>
+
+      <div class="section">
+        <h3>Live Update</h3>
+        <button onclick="toggleLive()">Toggle Live Update</button>
+      </div>
     </div>
 
     <div class="response-panel">
+      <h3>Real-Time Spectrum Graph</h3>
+      <canvas id="spectrumChart" height="200"></canvas>
+
       <h3>Response Output</h3>
       <pre id="response">{"status": "waiting for action..."}</pre>
     </div>
   </div>
 
   <script>
-    const API = "http://localhost:8000";
-    const getVal = id => document.getElementById(id).value;
+  const API = "http://localhost:8000";
+  const getVal = id => document.getElementById(id).value;
 
-    function showResponse(data) {
-      document.getElementById("response").innerText = JSON.stringify(data, null, 2);
-    }
+  let centerFreqHz = 915e6;
+  let spanHz = 10e6;
+  let tracePoints = 1001;
+  let isFetching = false;
+  let intervalId = null;
+  let refLevel = -50; // fallback ref level (dBm)
 
-    async function send(endpoint, method = "POST") {
-      const res = await fetch(`${API}${endpoint}`, { method });
-      const data = await res.json();
-      showResponse(data);
-    }
+  window.onload = () => {
+    send('/connect');
+  };
 
-    async function postValue(endpoint, payload = {}) {
-      const res = await fetch(`${API}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      showResponse(data);
+  const ctx = document.getElementById('spectrumChart').getContext('2d');
+  const spectrumChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Amplitude (dBm)',
+        data: [],
+        borderColor: '#26a69a',
+        backgroundColor: 'rgba(38,166,154,0.1)',
+        fill: true,
+        pointRadius: 0,
+        tension: 0.3
+      }]
+    },
+    options: {
+      animation: { duration: 200 },
+      scales: {
+        x: {
+          title: { display: true, text: 'Frequency (Hz)' }
+        },
+        y: {
+          title: { display: true, text: 'Amplitude (dBm)' },
+          min: () => refLevel - 20,
+          max: () => refLevel + 5
+        }
+      }
     }
+  });
 
-    async function setCenterFreq() {
-      const freq = parseFloat(getVal("freqInput"));
-      const units = getVal("freqUnits");
-      let hzValue = freq;
-      if (units === "KHZ") hzValue *= 1e3;
-      if (units === "MHZ") hzValue *= 1e6;
-      if (units === "GHZ") hzValue *= 1e9;
-      await postValue("/set_center_freq", { freq: hzValue });
+  function showResponse(data) {
+    document.getElementById("response").innerText = JSON.stringify(data, null, 2);
+  }
+
+  async function send(endpoint, method = "POST") {
+    const res = await fetch(`${API}${endpoint}`, { method });
+    const data = await res.json();
+    showResponse(data);
+  }
+
+  async function postValue(endpoint, payload = {}) {
+    const res = await fetch(`${API}${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    showResponse(data);
+    return data;
+  }
+
+  async function setCenterFreq() {
+    const freq = parseFloat(getVal("freqInput"));
+    const units = getVal("freqUnits");
+    let hzValue = freq;
+    if (units === "KHZ") hzValue *= 1e3;
+    if (units === "MHZ") hzValue *= 1e6;
+    if (units === "GHZ") hzValue *= 1e9;
+    centerFreqHz = hzValue;
+    await postValue("/set_center_freq", { freq: hzValue });
+  }
+
+  async function updateSpan() {
+    const span = parseFloat(getVal("spanValue"));
+    const units = getVal("spanUnits");
+    let hzValue = span;
+    if (units === "KHZ") hzValue *= 1e3;
+    if (units === "MHZ") hzValue *= 1e6;
+    if (units === "GHZ") hzValue *= 1e9;
+    spanHz = hzValue;
+    await postValue("/set_span", { value: hzValue, units: "HZ" });
+  }
+
+  async function fetchRefLevel() {
+  try {
+    const res = await fetch(`${API}/get_ref_level`);
+    const json = await res.json();
+    if (json.ref_level !== undefined) {
+      refLevel = parseFloat(json.ref_level);
+      console.log("Reference level set to:", refLevel);
+
+      const divisions = 10;
+      const divSize = 10; // typical spectrum scale
+      spectrumChart.options.scales.y.max = refLevel;
+      spectrumChart.options.scales.y.min = refLevel - (divisions * divSize);
+      spectrumChart.update();
     }
-  </script>
+  } catch (e) {
+    console.warn("Failed to get ref level", e);
+  }
+}
+
+
+  async function fetchTraceData() {
+    if (isFetching) return;
+    isFetching = true;
+    try {
+      const res = await fetch(`${API}/get_trace_data`);
+      const json = await res.json();
+
+      showResponse(json);
+
+      if (json && Array.isArray(json.trace)) {
+        const startFreq = centerFreqHz - spanHz / 2;
+        const freqLabels = json.trace.map((_, i) =>
+          Math.round(startFreq + (i * spanHz) / (json.trace.length - 1))
+        );
+        spectrumChart.data.labels = freqLabels;
+        spectrumChart.data.datasets[0].data = json.trace;
+        spectrumChart.update();
+      } else {
+        console.warn("No usable trace data returned:", json);
+      }
+    } catch (err) {
+      showResponse({ error: err.message });
+    } finally {
+      isFetching = false;
+    }
+  }
+
+  async function toggleLive() {
+    if (intervalId) {
+      clearInterval(intervalId);
+      intervalId = null;
+      console.log("Live update stopped.");
+    } else {
+      await fetchRefLevel(); // set ref level before plotting
+      intervalId = setInterval(fetchTraceData, 500);
+      console.log("Live update started.");
+    }
+  }
+</script>
+
 </body>
 </html>

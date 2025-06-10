@@ -88,7 +88,7 @@ class SpectrumAnalyzer:
                 response += part
                 if not part or b'\n' in part:
                     break
-            return response.decode().strip()
+            return response.decode(errors='replace').strip()
         except Exception as e:
             raise IOError(f"Failed to read response -> {e}")
 
@@ -266,6 +266,13 @@ class SpectrumAnalyzer:
         """
         return self.query(self.cmd.build("get_ref_level_offset"))
 
+    def get_raw_data(self):
+        self.send_command(self.cmd.build("return_ascii_formatted_data"))
+        time.sleep(0.2)  # let the analyzer switch format
+        data = self.query(self.cmd.build("get_raw_data"))
+        # print(f"Trace Data Preview: {repr(data[:100])}")  # helpful for debug
+        return data
+
     # not working yet. ToDo: implement this feature.
     def take_screenshot(self, name="screenshot"):
         self.send_and_wait(self.cmd.build("take_screenshot", name=name))
@@ -295,6 +302,9 @@ if __name__ == "__main__":
     try:
         analyzer.connect()
         print(analyzer.identify())
-        analyzer.send_command(":FREQ:CENT 1GHz\r\n")
+
+        trace_ascii = analyzer.get_raw_data()
+        print(trace_ascii)
+
     finally:
         analyzer.disconnect()

@@ -156,3 +156,18 @@ def take_screenshot(data: NameModel):
 def download_screenshot():
     analyzer.download_screenshot_via_ftp()
     return {"status": "screenshot downloaded to local path"}
+
+
+@app.get("/get_trace_data")
+def get_trace_data():
+    try:
+        if not analyzer.is_connected:
+            analyzer.connect()
+        raw_data = analyzer.get_raw_data()
+        # print("RAW PREVIEW:", repr(raw_data[:100]))
+        float_data = list(map(float, raw_data.strip().split(',')))
+        return {"trace": float_data}
+    except Exception as e:
+        print("Trace error:", e)
+        return {"error": str(e)}
+
