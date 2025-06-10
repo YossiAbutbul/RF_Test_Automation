@@ -1,0 +1,17 @@
+[33mcommit 8f25833dd568b369b96eb84fe26b52ebbf3d0ab3[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: YossiAbutbul <abyossi22@gmail.com>
+Date:   Tue Jun 10 09:12:27 2025 +0300
+
+    Add main.py script
+
+[33mcommit aeafa4a559ab7694534455cd408999c4d2b46aa0[m
+Author: YossiAbutbul <abyossi22@gmail.com>
+Date:   Tue Jun 10 09:11:42 2025 +0300
+
+    Add Spectrum package with SCPI builder and analyzer logic
+
+[33mcommit cc470ff32783b5cf176afc1f7dc33ff01d8c60ff[m
+Author: YossiAbutbul <abyossi22@gmail.com>
+Date:   Mon Jun 9 18:07:59 2025 +0300
+
+    Change folser strucure

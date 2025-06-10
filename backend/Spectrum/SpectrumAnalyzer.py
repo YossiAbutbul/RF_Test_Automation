@@ -6,7 +6,19 @@ from .scpi_command_builder import SCPICommandBuilder
 
 
 class SpectrumAnalyzer:
-    def __init__(self, ip_address, port=5555, timeout=5, line_ending='\n', scpi_path=None, scpi_builder=None):
+    """
+    A class to control and communicate with a spectrum analyzer over TCP/IP using SCPI commands.
+    """
+    def __init__(self, ip_address, port=5555, timeout=5, line_ending='\n', scpi_path=None, scpi_builder=None) -> None:
+        """
+        Initialize the SpectrumAnalyzer.
+        :param ip_address: IP address of the Spectrum Analyzer.
+        :param port: Port for socket connection. Defaults  to 5555 (for R&S FSC3)
+        :param timeout: Timeout for socket operations in seconds. Defaults to 5.
+        :param line_ending: Line termination character for SCPI commands. Defaults to '\n'.
+        :param scpi_path: Path to the SCPI JSON definition file.
+        :param scpi_builder: Custom SCPI command builder instance.
+        """
         self.ip_address = ip_address
         self.port = port
         self.timeout = timeout
@@ -17,7 +29,11 @@ class SpectrumAnalyzer:
             scpi_path = os.path.join(os.path.dirname(__file__), "SCPI_COMMAND.json")
         self.cmd = scpi_builder if scpi_builder else SCPICommandBuilder(scpi_path)
 
-    def connect(self):
+    def connect(self) -> None:
+        """
+        Establish a socket connection to the spectrum analyzer and verify the response.
+        :return: None.
+        """
         try:
             self.sock = socket.create_connection((self.ip_address, self.port), timeout=self.timeout)
             self.sock.settimeout(self.timeout)
@@ -33,13 +49,25 @@ class SpectrumAnalyzer:
             self.sock = None
             raise ConnectionError(f"failed to connect to {self.ip_address}:{self.port} -> {e}")
 
-    def disconnect(self):
+    def disconnect(self) -> None:
+        """
+        Disconnect from the spectrum analyzer.
+        :return: None
+        """
         if self.sock:
             self.sock.close()
             self.sock = None
             print("Disconnected")
 
-    def send_command(self, command):
+    def send_command(self, command) -> None:
+        """
+        Send a SCPI command to the spectrum analyzer.
+        :param command: SCPI command string.
+        :raises:
+            RuntimeError: If the analyzer is not connected.
+            IOError: If sending fails.
+        :return: None
+        """
         if not self.sock:
             raise RuntimeError("No Spectrum Analyzer connected.")
 
@@ -49,7 +77,11 @@ class SpectrumAnalyzer:
         except Exception as e:
             raise IOError(f"Failed to send command {command} -> {e}")
 
-    def read_response(self):
+    def read_response(self) -> str:
+        """
+        Read response from the spectrum analyzer.
+        :return:
+        """
         if not self.sock:
             raise RuntimeError("No Spectrum Analyzer connected")
         try:
