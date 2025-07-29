@@ -63,6 +63,7 @@ def main():
     time.sleep(2)
     lora_cw(device=device, spectrum=analyzer, frequency=918000000, power=0, ref_offset=20)
 
+# python -m SpectrumTestApp.main_test
 
 # D5A9F012CC39
 if __name__ == '__main__':
