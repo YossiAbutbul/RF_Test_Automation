@@ -2,15 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light dark; }
+/* Surfaces */
+.card,
+.card-soft {
+  @apply rounded-2xl bg-card-bg border border-[color:var(--tw-color-card-border)] shadow-card;
+}
+:root {
+  --tw-color-card-border: theme(colors.card.border);
+}
 
-.card { @apply rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-card; }
-.field { @apply rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-3 py-2; }
-.soft { @apply bg-zinc-50 dark:bg-zinc-900/40; }
-.badge { @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium; }
-.badge-green { @apply bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300; }
-.badge-red { @apply bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300; }
-.badge-blue { @apply bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300; }
-.badge-zinc { @apply bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300; }
-.section-title { @apply text-base font-medium; }
-.subtle { @apply text-sm text-zinc-500; }
+/* Inputs (light) */
+.field {
+  @apply rounded-xl border border-[color:var(--tw-color-card-border)] bg-white px-3 py-2;
+}
+
+/* Section titles / subtitles */
+.section-title,
+.section-head {
+  @apply text-base font-medium;
+}
+.subtle,
+.section-sub {
+  @apply text-sm text-zinc-500;
+}
+
+/* Pills / badges */
+.pill {
+  @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium;
+}
+.pill-green {
+  @apply bg-success-50 text-success-600;
+}
+.pill-red {
+  @apply bg-danger-50  text-danger-600;
+}
+.pill-zinc {
+  @apply bg-zinc-100 text-zinc-700;
+}
+.pill-blue {
+  @apply bg-primary-50 text-primary-700;
+}
+
+/* KPI cards */
+.kpi {
+  @apply card p-4;
+}
+.kpi-title {
+  @apply text-xs text-zinc-500 mb-2;
+}
+.kpi-value {
+  @apply text-3xl font-semibold tracking-tight;
+}
+.kpi-sub {
+  @apply text-xs text-zinc-400;
+}
+
+/* Icon bubble with subtle gradient */
+.icon-bubble {
+  background: linear-gradient(
+    180deg,
+    theme(colors.primary.50) 0%,
+    #ffffff 100%
+  );
+  color: theme(colors.primary.700);
+  @apply inline-flex h-7 w-7 items-center justify-center rounded-full;
+}
+
+/* Status buttons */
+.btn-soft {
+  @apply rounded-full px-3 py-1 text-xs font-medium;
+}
+.btn-connected {
+  @apply bg-success-50 text-success-600;
+}
+.btn-connect {
+  @apply bg-danger-50  text-danger-600;
+}
