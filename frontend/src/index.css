@@ -1,13 +1,16 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
+:root { color-scheme: light dark; }
+
+.card { @apply rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-card; }
+.field { @apply rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-3 py-2; }
+.soft { @apply bg-zinc-50 dark:bg-zinc-900/40; }
+.badge { @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium; }
+.badge-green { @apply bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300; }
+.badge-red { @apply bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300; }
+.badge-blue { @apply bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300; }
+.badge-zinc { @apply bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300; }
+.section-title { @apply text-base font-medium; }
+.subtle { @apply text-sm text-zinc-500; }
