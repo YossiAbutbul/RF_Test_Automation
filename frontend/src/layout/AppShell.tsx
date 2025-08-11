@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react'
 import { Gauge, Settings, CirclePlay, NotebookPen, Activity, FileText, Menu } from 'lucide-react'
+
 import Dashboard from '@/pages/Dashboard'
 import Configurations from '@/pages/Configurations'
 import TestSequence from '@/pages/TestSequence'
 import TestMatrix from '@/pages/TestMatrix'
 import SpectrumView from '@/pages/SpectrumView'
 import Reports from '@/pages/Reports'
-import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 
 const NAV = [
@@ -17,50 +17,93 @@ const NAV = [
   { key: 'spectrum', label: 'Spectrum View', icon: Activity, comp: SpectrumView },
   { key: 'reports', label: 'Reports', icon: FileText, comp: Reports },
 ] as const
-
 type NavKey = typeof NAV[number]['key']
 
 export default function AppShell() {
   const [open, setOpen] = useState(true)
-  const [active, setActive] = useState<NavKey>('sequence')
-  const ActiveComp = useMemo(()=> NAV.find(n=>n.key===active)?.comp ?? Dashboard, [active])
+  const [active, setActive] = useState<NavKey>('dashboard')
+  const ActiveComp = useMemo(() => NAV.find(n => n.key === active)?.comp ?? Dashboard, [active])
+
+  // Fixed sizes (px) and a single source of truth for layout shift
+  const SB_OPEN = 256  // 16rem
+  const SB_COLLAPSED = 72 // 4.5rem
+  const sbWidth = open ? SB_OPEN : SB_COLLAPSED
+  const transition = 'width .22s ease, margin-left .22s ease'
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 backdrop-blur bg-white/80 dark:bg-zinc-950/80 border-b border-zinc-200 dark:border-zinc-900">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={()=>setOpen(s=>!s)} className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800"><Menu className="w-5 h-5"/></button>
-            <div className="font-semibold">RF Automation <span className='text-zinc-400 font-normal text-sm ml-2'>Test Platform</span></div>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Badge tone="green">DUT</Badge>
-            <Badge tone="blue">Analyzer</Badge>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-[auto,1fr] gap-6">
-        <aside className={`transition-all ${open?'w-64 opacity-100':'w-0 opacity-0 lg:w-16'} overflow-hidden`}>
+      {/* Fixed, full-height light sidebar */}
+      <aside
+        className="fixed inset-y-0 left-0 bg-white border-r border-zinc-200 shadow-sm overflow-hidden"
+        style={{ width: sbWidth, transition }}
+        aria-label="Sidebar"
+      >
+        <div className="h-full p-2">
           <Card className="p-2 h-full">
             <nav className="flex flex-col">
-              {NAV.map(item=>{
+              {NAV.map(item => {
                 const Icon = item.icon
-                const isActive = active===item.key
+                const isActive = active === item.key
                 return (
-                  <button key={item.key} onClick={()=>setActive(item.key)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 ${isActive?'bg-zinc-100 dark:bg-zinc-800 font-medium':''}`}>
-                    <Icon className="w-4 h-4"/>
-                    <span className={`${open?'block':'hidden lg:block'}`}>{item.label}</span>
+                  <button
+                    key={item.key}
+                    onClick={() => setActive(item.key)}
+                    className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-left transition-colors
+                      ${isActive ? 'bg-zinc-100 text-[#5964DA] font-medium' : 'text-zinc-700 hover:bg-zinc-100'}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {/* fade/slide label when collapsing */}
+                    <span
+                      style={{
+                        transition: 'opacity .18s ease',
+                        opacity: open ? 1 : 0,
+                      }}
+                      className={`whitespace-nowrap ${open ? 'block' : 'hidden'}`}
+                    >
+                      {item.label}
+                    </span>
                   </button>
                 )
               })}
             </nav>
           </Card>
-        </aside>
-        <main>
+        </div>
+      </aside>
+
+      {/* Header shifts with sidebar; full-width across page */}
+      <header
+        className="sticky top-0 z-40 bg-white/85 backdrop-blur border-b border-zinc-200"
+        style={{ marginLeft: sbWidth, transition }}
+      >
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setOpen(s => !s)}
+              aria-expanded={open}
+              className="p-2 rounded-xl hover:bg-zinc-100"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="font-semibold">
+              RF Automation <span className="text-zinc-400 font-normal text-sm ml-2">Test Platform</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-emerald-50 text-emerald-600">DUT</span>
+            <span className="inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-[#EEF0FF] text-[#5964DA]">Analyzer</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main content also shifts with sidebar */}
+      <main
+        style={{ marginLeft: sbWidth, transition }}
+        className="px-4 py-6"
+      >
+        <div className="max-w-7xl mx-auto">
           <ActiveComp />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   )
 }

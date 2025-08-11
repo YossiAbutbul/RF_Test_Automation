@@ -9,14 +9,14 @@ export default function RightPanel(){
       </div>
       {tab==='Config'? (
         <div className='space-y-3'>
-          <div><div className='text-xs text-zinc-500'>Start Freq (MHz)</div><input className='field w-full mt-1' defaultValue='800'/></div>
-          <div><div className='text-xs text-zinc-500'>Stop Freq (MHz)</div><input className='field w-full mt-1' defaultValue='3000'/></div>
+          <div><div className='text-xs text-zinc-500'>Start Freq (MHz)</div><input className='field w-full' defaultValue='800'/></div>
+          <div><div className='text-xs text-zinc-500'>Stop Freq (MHz)</div><input className='field w-full' defaultValue='3000'/></div>
           <div className='grid grid-cols-2 gap-3'>
-            <div><div className='text-xs text-zinc-500'>RBW (MHz)</div><input className='field w-full mt-1' defaultValue='1'/></div>
-            <div><div className='text-xs text-zinc-500'>VBW (MHz)</div><input className='field w-full mt-1' defaultValue='3'/></div>
+            <div><div className='text-xs text-zinc-500'>RBW (MHz)</div><input className='field w-full' defaultValue='1'/></div>
+            <div><div className='text-xs text-zinc-500'>VBW (MHz)</div><input className='field w-full' defaultValue='3'/></div>
           </div>
-          <div><div className='text-xs text-zinc-500'>Reference Level (dBm)</div><input className='field w-full mt-1' defaultValue='-20'/></div>
-          <div><div className='text-xs text-zinc-500'>Detector Type</div><select className='field w-full mt-1'><option>Peak</option><option>RMS</option></select></div>
+          <div><div className='text-xs text-zinc-500'>Reference Level (dBm)</div><input className='field w-full' defaultValue='-20'/></div>
+          <div><div className='text-xs text-zinc-500'>Detector Type</div><select className='field w-full'><option>Peak</option><option>RMS</option></select></div>
           <button className='rounded-xl bg-violet-600 text-white w-full py-2'>Update Sweep</button>
           <div className='pt-2'>
             <div className='text-sm font-medium'>Display Options</div>
