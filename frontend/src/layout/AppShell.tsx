@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Gauge, Settings, CirclePlay, NotebookPen, Activity, FileText, Menu } from 'lucide-react'
+import { Gauge, Settings, CirclePlay, NotebookPen, Activity, FileText } from 'lucide-react'
 
 import Dashboard from '@/pages/Dashboard'
 import Configurations from '@/pages/Configurations'
@@ -7,7 +7,7 @@ import TestSequence from '@/pages/TestSequence'
 import TestMatrix from '@/pages/TestMatrix'
 import SpectrumView from '@/pages/SpectrumView'
 import Reports from '@/pages/Reports'
-import { Card } from '@/components/ui/Card'
+// import Card removed: the sidebar no longer uses Card
 
 const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: Gauge, comp: Dashboard },
@@ -34,13 +34,32 @@ export default function AppShell() {
     <div className="min-h-screen">
       {/* Fixed, full-height light sidebar */}
       <aside
-        className="fixed inset-y-0 left-0 bg-white border-r border-zinc-200 shadow-sm overflow-hidden"
+        className="fixed inset-y-0 left-0 bg-gradient-to-br from-[#EEF0FF] via-[#F7F9FF] to-white border-r border-zinc-200 shadow-lg overflow-hidden"
         style={{ width: sbWidth, transition }}
         aria-label="Sidebar"
       >
-        <div className="h-full p-2">
-          <Card className="p-2 h-full">
-            <nav className="flex flex-col">
+        <div className="h-full p-4 flex flex-col">
+          {/* Application title moved from header to sidebar; clicking toggles collapse */}
+          <div
+            className="mb-6 cursor-pointer select-none"
+            onClick={() => setOpen(s => !s)}
+          >
+            {open ? (
+              <div className="flex items-baseline">
+                <span className="text-xl font-semibold text-[#5964DA]">
+                  RF Automation
+                </span>
+                <span className="ml-1 text-zinc-400 font-normal text-sm">
+                  Test Platform
+                </span>
+              </div>
+            ) : (
+              <span className="text-xl font-bold text-[#5964DA]">RF</span>
+            )}
+          </div>
+          {/* Nav container without card */}
+          <div className="flex-1 overflow-auto">
+            <nav className="flex flex-col gap-2">
               {NAV.map(item => {
                 const Icon = item.icon
                 const isActive = active === item.key
@@ -49,7 +68,11 @@ export default function AppShell() {
                     key={item.key}
                     onClick={() => setActive(item.key)}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-left transition-colors
-                      ${isActive ? 'bg-zinc-100 text-[#5964DA] font-medium' : 'text-zinc-700 hover:bg-zinc-100'}`}
+                      ${
+                        isActive
+                          ? 'bg-gradient-to-r from-[#5964DA] to-[#8892E6] text-white font-medium'
+                          : 'text-zinc-700 hover:bg-zinc-100'
+                      }`}
                   >
                     <Icon className="w-4 h-4" />
                     {/* fade/slide label when collapsing */}
@@ -66,7 +89,7 @@ export default function AppShell() {
                 )
               })}
             </nav>
-          </Card>
+          </div>
         </div>
       </aside>
 
@@ -76,17 +99,8 @@ export default function AppShell() {
         style={{ marginLeft: sbWidth, transition }}
       >
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setOpen(s => !s)}
-              aria-expanded={open}
-              className="p-2 rounded-xl hover:bg-zinc-100"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <div className="font-semibold">
-              RF Automation <span className="text-zinc-400 font-normal text-sm ml-2">Test Platform</span>
-            </div>
+          <div className="flex items-center">
+            {/* Hamburger icon removed; use sidebar title to toggle */}
           </div>
           <div className="flex items-center gap-2 text-sm">
             <span className="inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-emerald-50 text-emerald-600">DUT</span>
