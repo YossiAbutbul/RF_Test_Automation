@@ -1,27 +1,128 @@
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card } from '@/components/ui/Card'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 export default function SpectrumView() {
   const [tab, setTab] = useState<'Config' | 'Markers'>('Config')
+  // Live spectrum state
+  const [isLive, setIsLive] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
+  const [spectrumData, setSpectrumData] = useState<number[]>([])
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  const handleLiveToggle = () => {
+    setIsLive(prev => !prev)
+    setIsPaused(false)
+    // call backend start/stop actions
+    fetch(`/api/spectrum/${!isLive ? 'start' : 'stop'}`, { method: 'POST' }).catch(() => {})
+  }
+  const handlePauseToggle = () => {
+    setIsPaused(prev => !prev)
+  }
+  const handleFullscreen = () => {
+    const canvas = canvasRef.current
+    if (canvas && (canvas as any).requestFullscreen) {
+      ;(canvas as any).requestFullscreen()
+    }
+  }
+  // fetch spectrum data from backend
+  const fetchSpectrumData = async () => {
+    try {
+      const res = await fetch('/api/spectrum/data')
+      const json = await res.json()
+      return json?.data ?? []
+    } catch (error) {
+      console.error(error)
+      return []
+    }
+  }
+
+  // Poll backend for spectrum data when live and not paused
+  useEffect(() => {
+    let interval: any
+    if (isLive && !isPaused) {
+      interval = setInterval(async () => {
+        const data = await fetchSpectrumData()
+        setSpectrumData(data)
+      }, 1000)
+    }
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [isLive, isPaused])
+
+  // Draw spectrum data to canvas
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    // resize canvas to match displayed size
+    canvas.width = canvas.offsetWidth
+    canvas.height = canvas.offsetHeight
+    const width = canvas.width
+    const height = canvas.height
+    ctx.clearRect(0, 0, width, height)
+    if (!spectrumData || spectrumData.length === 0) {
+      ctx.fillStyle = '#64748b'
+      ctx.font = '14px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(isLive ? 'Waiting for data...' : 'Live mode is off', width / 2, height / 2)
+      return
+    }
+    const max = Math.max(...spectrumData)
+    const min = Math.min(...spectrumData)
+    ctx.beginPath()
+    spectrumData.forEach((val, idx) => {
+      const x = (idx / (spectrumData.length - 1)) * width
+      const y = height - ((val - min) / (max - min || 1)) * height
+      if (idx === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    })
+    ctx.strokeStyle = '#5964DA'
+    ctx.lineWidth = 2
+    ctx.stroke()
+  }, [spectrumData, isLive])
 
   return (
     <div>
       <PageHeader title="Spectrum View" subtitle="Analyze real-time frequency domain data" />
 
       <div className="flex items-center gap-2 mb-3">
-        <button className="rounded-xl bg-blue-100 text-blue-700 px-3 py-1 text-xs">Live</button>
-        <button className="rounded-xl border px-3 py-1 text-xs">Fullscreen</button>
-        <button className="rounded-xl border px-3 py-1 text-xs">Pause</button>
+        <button
+          onClick={handleLiveToggle}
+          className={`rounded-xl px-3 py-1 text-xs ${
+            isLive ? 'bg-green-600 text-white' : 'bg-blue-100 text-blue-700'
+          }`}
+        >
+          {isLive ? 'Stop' : 'Live'}
+        </button>
+        <button
+          onClick={handleFullscreen}
+          className="rounded-xl border px-3 py-1 text-xs"
+        >
+          Fullscreen
+        </button>
+        <button
+          onClick={handlePauseToggle}
+          disabled={!isLive}
+          className={`rounded-xl border px-3 py-1 text-xs ${
+            isPaused ? 'bg-zinc-200' : ''
+          }`}
+        >
+          {isPaused ? 'Resume' : 'Pause'}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr,360px] gap-4">
         <Card className="p-4">
           <div className="font-medium">Spectrum Analysis</div>
           <div className="text-sm text-zinc-500">Real-time frequency domain monitoring</div>
-          <div className="mt-3 h-[520px] rounded-xl border bg-gradient-to-b from-blue-50 to-blue-100/30 grid place-items-center text-sm text-zinc-500">
-            Spectrum chart placeholder
-          </div>
+          <canvas
+            ref={canvasRef}
+            className="mt-3 w-full h-[520px] rounded-xl border bg-gradient-to-b from-blue-50 to-blue-100/30"
+          />
         </Card>
 
         <Card className="p-4 w-full">

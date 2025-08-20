@@ -49,9 +49,7 @@ export default function AppShell() {
                 <span className="text-xl font-semibold text-[#5964DA]">
                   RF Automation
                 </span>
-                <span className="ml-1 text-zinc-400 font-normal text-sm">
-                  Test Platform
-                </span>
+               
               </div>
             ) : (
               <span className="text-xl font-bold text-[#5964DA]">RF</span>
