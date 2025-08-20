@@ -5,7 +5,7 @@ from backend.api.models.analyzer_models import (
     RefLevelParam, MarkerNameParam, ScreenshotParam
 )
 from backend.services.spectrum_service import get_analyzer, create_analyzer, release_analyzer
-from backend.devices.SpectrumAnalyzer import SpectrumAnalyzer
+from backend.Spectrum import SpectrumAnalyzer
 
 router = APIRouter(prefix="/analyzer", tags=["Spectrum Analyzer"])
 

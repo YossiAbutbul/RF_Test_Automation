@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from backend.api.routes.spectrum import router as analyzer_router
+from backend.api.routes.analyzer_routes import router as analyzer_router
 
 app = FastAPI(title="RF Automation API")
 
