@@ -1,9 +1,25 @@
 from fastapi import FastAPI
-from backend.api.routes.analyzer_routes import router as analyzer_router
+from fastapi.middleware.cors import CORSMiddleware
+from api.routes.analyzer_routes import router as analyzer_router
 
-app = FastAPI(title="RF Automation API")
+app = FastAPI()
 
-# mount your router under its prefix
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# Allow frontend to call API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,         
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(analyzer_router)
 
-# you can add more routers or middleware here
+@app.get("/")
+def root():
+    return {"status": "Backend running"}
