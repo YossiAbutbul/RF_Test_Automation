@@ -1,6 +1,8 @@
+# backend/api/routes/analyzer_routes.py
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import PlainTextResponse, Response, JSONResponse
 from typing import Optional
+import re
 
 from api.models.analyzer_models import (
     AnalyzerConnectRequest, AnalyzerResponse,
@@ -10,16 +12,19 @@ from api.models.analyzer_models import (
 from services.spectrum_service import get_analyzer, create_analyzer, release_analyzer
 from Spectrum import SpectrumAnalyzer, InstrumentNotConnected
 
-# Expose everything under /analyzer to match the frontend
 router = APIRouter(prefix="/analyzer", tags=["Spectrum Analyzer"])
 
-# --- Helper: optional analyzer so we can return 204 instead of raising ---
 def _maybe_get_analyzer() -> Optional[SpectrumAnalyzer]:
     try:
         return get_analyzer()
     except HTTPException:
-        # e.g., service has no active analyzer
         return None
+
+def _num(s: str) -> float:
+    m = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", str(s))
+    return float(m.group(0)) if m else 0.0
+
+# ----- Connect / Disconnect -----
 
 @router.post("/connect", response_model=AnalyzerResponse)
 def connect_analyzer(req: AnalyzerConnectRequest):
@@ -44,7 +49,7 @@ def identify(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ----- Analyzer Commands -----
+# ----- Setters -----
 
 @router.post("/reset")
 def reset(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
@@ -91,43 +96,62 @@ def peak_search(data: MarkerNameParam, analyzer: SpectrumAnalyzer = Depends(get_
     analyzer.peak_search(data.mark_name)
     return {"message": f"Peak search triggered on {data.mark_name}"}
 
-@router.get("/get-marker-power", response_model=str)
-def get_marker_power(mark_name: str = "MARK1", analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
-    return analyzer.get_marker_power(mark_name)
+# ----- Getters (robust; never 500 to the browser) -----
 
-@router.get("/get-marker-frequency", response_model=str)
-def get_marker_frequency(mark_name: str = "MARK1", analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
-    return analyzer.get_marker_frequency(mark_name)
+@router.get("/get-center-frequency", response_class=PlainTextResponse)
+def get_center_frequency(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
+    try:
+        if hasattr(analyzer, "get_center_frequency"):
+            return analyzer.get_center_frequency()
+        # fallback via start/stop if available
+        start = _num(getattr(analyzer, "get_start_frequency")())
+        stop  = _num(getattr(analyzer, "get_stop_frequency")())
+        return str((start + stop) / 2.0)
+    except Exception as e:
+        return Response(status_code=503, content=str(e))
 
-@router.get("/get-rbw", response_model=str)
-def get_rbw(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
-    return analyzer.get_rbw()
-
-@router.get("/get-vbw", response_model=str)
-def get_vbw(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
-    return analyzer.get_vbw()
-
-@router.get("/get-span", response_model=str)
+@router.get("/get-span", response_class=PlainTextResponse)
 def get_span(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
-    return analyzer.get_span()
+    try:
+        return analyzer.get_span()
+    except Exception as e:
+        return Response(status_code=503, content=str(e))
 
-@router.get("/get-ref-level", response_model=str)
+@router.get("/get-rbw", response_class=PlainTextResponse)
+def get_rbw(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
+    try:
+        return analyzer.get_rbw()
+    except Exception as e:
+        return Response(status_code=503, content=str(e))
+
+@router.get("/get-vbw", response_class=PlainTextResponse)
+def get_vbw(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
+    try:
+        return analyzer.get_vbw()
+    except Exception as e:
+        return Response(status_code=503, content=str(e))
+
+@router.get("/get-ref-level", response_class=PlainTextResponse)
 def get_ref_level(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
-    return analyzer.get_ref_level()
+    try:
+        return analyzer.get_ref_level()
+    except Exception as e:
+        return Response(status_code=503, content=str(e))
 
-@router.get("/get-ref-level-offset", response_model=str)
+@router.get("/get-ref-level-offset", response_class=PlainTextResponse)
 def get_ref_level_offset(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
-    return analyzer.get_ref_level_offset()
+    try:
+        return analyzer.get_ref_level_offset()
+    except Exception as e:
+        return Response(status_code=503, content=str(e))
 
-# ---- IMPORTANT: CSV endpoint with graceful disconnect handling ----
+# ----- CSV trace (graceful if disconnected) -----
+
 @router.get("/get-raw-data", response_class=PlainTextResponse)
 def get_raw_data(analyzer: Optional[SpectrumAnalyzer] = Depends(_maybe_get_analyzer)):
-    """
-    Return CSV powers in dBm.
-    - 204 if analyzer is disconnected or missing.
-    - 503 for other transient backend issues.
-    """
     if analyzer is None:
+        return Response(status_code=204)
+    if hasattr(analyzer, "is_connected") and not getattr(analyzer, "is_connected"):
         return Response(status_code=204)
     try:
         data = analyzer.get_raw_data()
@@ -135,8 +159,36 @@ def get_raw_data(analyzer: Optional[SpectrumAnalyzer] = Depends(_maybe_get_analy
     except InstrumentNotConnected:
         return Response(status_code=204)
     except Exception as e:
-        # Avoid traceback spam; surface a clean error
         return Response(status_code=503, content=str(e))
+
+# ----- NEW: one-shot snapshot for fast hydration -----
+
+@router.get("/snapshot")
+def snapshot(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
+    out = {}
+    # center
+    try:
+        if hasattr(analyzer, "get_center_frequency"):
+            out["centerHz"] = _num(analyzer.get_center_frequency())
+        else:
+            start = _num(getattr(analyzer, "get_start_frequency")())
+            stop  = _num(getattr(analyzer, "get_stop_frequency")())
+            out["centerHz"] = (start + stop) / 2.0
+    except Exception: pass
+    # span / rbw / vbw / ref
+    for key, getter in [
+        ("spanHz", "get_span"),
+        ("rbwHz",  "get_rbw"),
+        ("vbwHz",  "get_vbw"),
+        ("refDbm", "get_ref_level"),
+    ]:
+        try:
+            out[key] = _num(getattr(analyzer, getter)())
+        except Exception:
+            pass
+    return JSONResponse(out)
+
+# ----- screenshots -----
 
 @router.post("/take-screenshot")
 def take_screenshot(data: ScreenshotParam, analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
