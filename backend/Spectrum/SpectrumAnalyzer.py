@@ -179,6 +179,9 @@ class SpectrumAnalyzer:
         data = self.query(self.cmd.build("get_raw_data"))
         # print(f"Trace Data Preview: {repr(data[:100])}")
         return data
+    
+    def get_center_frequency(self):
+        return self.query(self.cmd.build("get_center_frequency"))
 
     # not working yet. ToDo: implement this feature.
     def take_screenshot(self, name="screenshot"):

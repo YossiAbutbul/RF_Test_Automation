@@ -19,5 +19,6 @@
   "get_ref_level_offset": "DISP:WIND:TRAC:Y:RLEV:OFFS?",
   "take_screenshot": "MMEM:STOR:SCR {name}.png",
   "return_ascii_formatted_data":":FORM ASC",
-  "get_raw_data": ":TRAC? TRACE1"
+  "get_raw_data": ":TRAC? TRACE1",
+  "get_center_frequency": "SENS:FREQ:CENT?"
 }
