@@ -4,6 +4,25 @@ import os
 from ftplib import FTP
 from .scpi_command_builder import SCPICommandBuilder
 # from scpi_command_builder import SCPICommandBuilder
+import re
+
+FLOAT_RE = re.compile(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+def _only_number(s: str) -> float:
+    m = FLOAT_RE.search(str(s))
+    if not m:
+        raise ValueError(f"Cannot parse number from: {s!r}")
+    return float(m.group(0))
+
+# ADD inside SpectrumAnalyzer:
+
+def _query_number(self, scpi_or_cmd: str) -> float:
+    """
+    Send a query and parse the first numeric token (units stripped).
+    Accepts raw SCPI (e.g., 'FREQ:CENT?') or a JSON-built command string.
+    """
+    resp = self.query(scpi_or_cmd)
+    return _only_number(resp)
 
 class InstrumentNotConnected(Exception):
     pass
@@ -157,31 +176,90 @@ class SpectrumAnalyzer:
         return self.query(self.cmd.build("get_marker_frequency", mark_name=mark_name))
 
     def get_rbw(self) -> str:
-        return self.query(self.cmd.build("get_rbw"))
+        """Return RBW in Hz as a plain numeric string (tries BAND:RES? then legacy)"""
+        try:
+            val = self._query_number(self.cmd.build("get_rbw"))
+            return str(int(val))
+        except Exception:
+            pass
+        # direct SCPI fallbacks
+        try:
+            return str(int(self._query_number("BAND:RES?")))
+        except Exception:
+            return str(int(self._query_number("BWIDTH:RES?")))
 
-    def get_vbw(self):
-        return self.query(self.cmd.build("get_vbw"))
+    def get_vbw(self) -> str:
+        """Return VBW in Hz as a plain numeric string (tries BAND:VID? then legacy)"""
+        try:
+            val = self._query_number(self.cmd.build("get_vbw"))
+            return str(int(val))
+        except Exception:
+            pass
+        try:
+            return str(int(self._query_number("BAND:VID?")))
+        except Exception:
+            return str(int(self._query_number("BWIDTH:VID?")))
 
-    def get_span(self):
-        return self.query(self.cmd.build("get_span"))
+    def get_span(self) -> str:
+        try:
+            val = self._query_number(self.cmd.build("get_span"))
+        except Exception:
+            val = self._query_number("FREQ:SPAN?")
+        return str(int(val))
 
-    def get_ref_level(self):
-        return self.query(self.cmd.build("get_ref_level"))
+    def get_ref_level(self) -> str:
+        """Return reference level in dBm as a plain numeric string with decimals preserved"""
+        # Try JSON mapping first
+        try:
+            val = _only_number(self.query(self.cmd.build("get_ref_level")))
+            return f"{val:.6f}".rstrip("0").rstrip(".")
+        except Exception:
+            pass
+        # Common R&S fallbacks
+        candidates = [
+            "DISP:WIND:TRAC:Y:RLEV?",
+            "DISP:TRAC:Y:RLEV?",
+            "DISP:WIND:TRAC1:Y:RLEV?",
+            "DISP:WIND1:TRAC1:Y:RLEV?",
+        ]
+        last = None
+        for c in candidates:
+            try:
+                val = _only_number(self.query(c))
+                return f"{val:.6f}".rstrip("0").rstrip(".")
+            except Exception as e:
+                last = e
+        raise last or RuntimeError("Ref level query failed")
 
     def get_ref_level_offset(self):
         return self.query(self.cmd.build("get_ref_level_offset"))
 
     def get_raw_data(self):
-        """Return a CSV string of powers in dBm."""
+        """Return a CSV string of powers in dBm (numbers only, comma-separated)."""
         self._ensure_connected()
         self.send_command(self.cmd.build("return_ascii_formatted_data"))
         time.sleep(0.2)  # let the analyzer switch format
-        data = self.query(self.cmd.build("get_raw_data"))
-        # print(f"Trace Data Preview: {repr(data[:100])}")
-        return data
+        raw = self.query(self.cmd.build("get_raw_data"))
+
+        # Normalize delimiters and strip units per value
+        raw = raw.replace(";", ",").replace("\t", ",")
+        tokens = [t.strip() for t in raw.split(",") if t.strip()]
+        nums = []
+        for t in tokens:
+            try:
+                nums.append(str(_only_number(t)))
+            except Exception:
+                # ignore any non-numeric cruft
+                pass
+        return ",".join(nums)
     
-    def get_center_frequency(self):
-        return self.query(self.cmd.build("get_center_frequency"))
+    def get_center_frequency(self) -> str:
+    # Prefer your JSON command; fallback to direct SCPI if needed
+        try:
+            val = self._query_number(self.cmd.build("get_center_frequency"))
+        except Exception:
+            val = self._query_number("FREQ:CENT?")
+        return str(int(val))
 
     # not working yet. ToDo: implement this feature.
     def take_screenshot(self, name="screenshot"):
