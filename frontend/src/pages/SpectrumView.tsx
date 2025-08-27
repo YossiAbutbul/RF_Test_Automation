@@ -1,149 +1,260 @@
-import { useEffect, useRef, useState } from "react";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ping,
   connectAnalyzer,
   disconnectAnalyzer,
-  configureSweep,
   getRawDataCsv,
   getSnapshot,
-} from "@/api/analyzer";
+  configureSweep,
+} from "../api/analyzer";
 
-/* ===================== Helpers ===================== */
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function decimateToWidth(src: number[], width: number): Float32Array {
-  const n = src.length;
-  if (n <= width) {
-    const out = new Float32Array(width);
-    for (let i = 0; i < width; i++) {
-      const idx = Math.round((i / Math.max(1, width - 1)) * (n - 1));
-      out[i] = src[idx] ?? src[n - 1] ?? 0;
-    }
-    return out;
-  }
-  const out = new Float32Array(width);
-  const bucket = n / width;
-  let start = 0;
-  for (let i = 0; i < width; i++) {
-    const end = Math.min(n, Math.round((i + 1) * bucket));
-    let sum = 0,
-      cnt = 0;
-    for (let j = Math.round(start); j < end; j++) {
-      sum += src[j];
-      cnt++;
-    }
-    out[i] = cnt ? sum / cnt : 0;
-    start = end;
-  }
-  return out;
-}
-
-function lerpArrays(prev: Float32Array, next: Float32Array, t: number, out: Float32Array) {
-  const len = out.length;
-  for (let i = 0; i < len; i++) out[i] = prev[i] + (next[i] - prev[i]) * t;
-}
+type Snapshot = {
+  centerHz?: number;
+  spanHz?: number;
+  rbwHz?: number;
+  vbwHz?: number;
+  refDbm?: number;
+};
 
 type TraceMode = "CLEAR_WRITE" | "MAX_HOLD";
 
-/* ===================== Component ===================== */
+const CANVAS_W = 900;
+const CANVAS_H = 420;
+const GRID_DIVS = 10;
+const POLL_INTERVAL_MS = 90; // smooth but not frantic
 
 export default function SpectrumView() {
-  const [tab, setTab] = useState<"Config" | "Markers">("Config");
-
-  // Connection
+  // connection
   const [ip, setIp] = useState("172.16.10.1");
-  const [port, setPort] = useState<number>(5555);
+  const [port, setPort] = useState(5555);
   const [isConnected, setIsConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const isConnectedRef = useRef(isConnected);
-  useEffect(() => {
-    isConnectedRef.current = isConnected;
-  }, [isConnected]);
+  const isConnectedRef = useRef(false);
+  const [identity, setIdentity] = useState<string | null>(null);
 
-  // Sweep configuration (MHz + dBm in UI)
-  const [startFreq, setStartFreq] = useState(800); // MHz
-  const [stopFreq, setStopFreq] = useState(3000); // MHz
-  const [rbw, setRbw] = useState(1); // MHz
-  const [vbw, setVbw] = useState(3); // MHz
-  const [refLevel, setRefLevel] = useState(-20); // dBm
-  const [dbPerDiv, setDbPerDiv] = useState(10); // dB/div
+  // sweep (UI state always mirrors the instrument; initialize to sensible defaults)
+  const [centerMHz, setCenterMHz] = useState(2400);
+  const [spanMHz, setSpanMHz] = useState(20);
+  const [rbwMHz, setRbwMHz] = useState(1);
+  const [vbwMHz, setVbwMHz] = useState(3);
+  const [refLevel, setRefLevel] = useState(-20);
+  const [dbPerDiv, setDbPerDiv] = useState(10);
 
-  // Trace mode
+  // trace
   const [traceMode, setTraceMode] = useState<TraceMode>("CLEAR_WRITE");
-
-  // Canvas + rendering buffers
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const prevRef = useRef<Float32Array | null>(null);
-  const nextRef = useRef<Float32Array | null>(null);
-  const workRef = useRef<Float32Array | null>(null);
-  const holdRef = useRef<Float32Array | null>(null); // Max Hold buffer
+  const maxHoldBuf = useRef<Float32Array | null>(null);
+  const lastTrace = useRef<Float32Array | null>(null);
+  const renderReq = useRef<number | null>(null);
 
-  // Draw & Polling
-  const rafId = useRef<number | null>(null);
-  const pollingRef = useRef(false);
-  const pollIntervalMsRef = useRef(90); // snappy updates
-  const lastServerFrameAt = useRef<number>(performance.now());
+  // polling control
+  const pollingTimer = useRef<number | null>(null);
+  const pollingBusy = useRef(false);
 
-  // Sizing
-  const sizeRef = useRef<{ w: number; h: number }>({ w: 800, h: 520 });
+  // ---------- helpers ----------
+  const hzToMHz = (hz?: number) => (hz ?? 0) / 1e6;
+  const mhzToHz = (mhz: number) => Math.max(0, mhz) * 1e6;
 
-  /* ---------- Connect / Disconnect ---------- */
+  const clearMax = () => {
+    maxHoldBuf.current = null;
+  };
 
-  async function hydrateFromInstrument() {
-    try {
-      const snap = await getSnapshot(); // one request, 6s timeout in api layer
-      if (typeof snap.refDbm === "number") setRefLevel(snap.refDbm);
-      if (typeof snap.rbwHz === "number") setRbw(snap.rbwHz / 1e6);
-      if (typeof snap.vbwHz === "number") setVbw(snap.vbwHz / 1e6);
-      if (typeof snap.centerHz === "number" && typeof snap.spanHz === "number") {
-        const startMHz = (snap.centerHz - snap.spanHz / 2) / 1e6;
-        const stopMHz = (snap.centerHz + snap.spanHz / 2) / 1e6;
-        setStartFreq(Number(startMHz.toFixed(3)));
-        setStopFreq(Number(stopMHz.toFixed(3)));
+  // ---------- drawing ----------
+  const drawGridAndAxes = useCallback(
+    (ctx: CanvasRenderingContext2D) => {
+      // background
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+      // grid
+      ctx.strokeStyle = "#222";
+      ctx.lineWidth = 1;
+
+      const dx = CANVAS_W / GRID_DIVS;
+      const dy = CANVAS_H / GRID_DIVS;
+
+      ctx.beginPath();
+      for (let i = 0; i <= GRID_DIVS; i++) {
+        const x = Math.round(i * dx) + 0.5;
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, CANVAS_H);
       }
-    } catch (e) {
-      console.warn("Hydrate warning:", e);
+      for (let j = 0; j <= GRID_DIVS; j++) {
+        const y = Math.round(j * dy) + 0.5;
+        ctx.moveTo(0, y);
+        ctx.lineTo(CANVAS_W, y);
+      }
+      ctx.stroke();
+
+      // axes labels
+      ctx.fillStyle = "#bbb";
+      ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica";
+
+      // X labels: center/span
+      const startMHz = centerMHz - spanMHz / 2;
+      const stopMHz = centerMHz + spanMHz / 2;
+      const xLbl = `${startMHz.toFixed(3)} MHz  —  ${centerMHz.toFixed(3)} MHz  —  ${stopMHz.toFixed(3)} MHz`;
+      ctx.fillText(xLbl, 14, CANVAS_H - 8);
+
+      // Y labels from refLevel and db/div
+      for (let i = 0; i <= GRID_DIVS; i++) {
+        const y = Math.round(i * dy);
+        const value = refLevel - i * dbPerDiv;
+        const txt = `${value.toFixed(0)} dBm`;
+        ctx.fillText(txt, 10, Math.min(CANVAS_H - 14, Math.max(14, y + 4)));
+      }
+    },
+    [centerMHz, spanMHz, refLevel, dbPerDiv]
+  );
+
+  const drawTrace = useCallback(
+    (ctx: CanvasRenderingContext2D, buf: Float32Array, color: string) => {
+      if (!buf || buf.length === 0) return;
+      const minY = refLevel - GRID_DIVS * dbPerDiv;
+      const maxY = refLevel;
+
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+
+      const n = buf.length;
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * (CANVAS_W - 1);
+        const dbm = buf[i];
+        // clamp
+        const yVal = Math.max(minY, Math.min(maxY, dbm));
+        const y = ((maxY - yVal) / (maxY - minY)) * (CANVAS_H - 1);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    },
+    [refLevel, dbPerDiv]
+  );
+
+  const render = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    drawGridAndAxes(ctx);
+
+    // live trace
+    const l = lastTrace.current;
+    if (l) drawTrace(ctx, l, "#8b5cf6"); // purple
+
+    // max hold overlay
+    const h = maxHoldBuf.current;
+    if (h) drawTrace(ctx, h, "#f59e0b"); // amber
+    renderReq.current = requestAnimationFrame(render);
+  }, [drawGridAndAxes, drawTrace]);
+
+  const startRendering = useCallback(() => {
+    if (renderReq.current != null) return;
+    renderReq.current = requestAnimationFrame(render);
+  }, [render]);
+
+  const stopRendering = useCallback(() => {
+    if (renderReq.current != null) {
+      cancelAnimationFrame(renderReq.current);
+      renderReq.current = null;
     }
-  }
+  }, []);
 
-  async function handleConnect() {
-    if (connecting || isConnectedRef.current) return;
-    console.log("Connect clicked", { ip, port });
-
-    setConnecting(true);
+  // ---------- polling ----------
+  const pollOnce = useCallback(async () => {
+    if (pollingBusy.current) return;
+    pollingBusy.current = true;
     try {
-      const ok = await ping();
-      if (!ok) {
-        alert("Backend not reachable (open http://127.0.0.1:8000 to verify).");
-        return;
+      const csv = await getRawDataCsv(); // analyzer.ts handles its own timeout (~2s)
+      // CSV → Float32Array
+      const parts = csv.split(",").map((s) => parseFloat(s));
+      const arr = new Float32Array(parts.length);
+      for (let i = 0; i < parts.length; i++) arr[i] = parts[i];
+
+      // update live
+      lastTrace.current = arr;
+
+      // update max-hold locally if enabled
+      if (traceMode === "MAX_HOLD") {
+        const h = maxHoldBuf.current;
+        if (!h || h.length !== arr.length) {
+          maxHoldBuf.current = new Float32Array(arr);
+        } else {
+          for (let i = 0; i < arr.length; i++) {
+            if (arr[i] > h[i]) h[i] = arr[i];
+          }
+        }
       }
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      if (msg.includes("timeout")) {
+        console.warn("Polling timeout — backing off.");
+      } else if (msg.includes("not-connected") || msg.includes("server-error")) {
+        console.warn("Polling error:", msg);
+      } else {
+        console.warn("Polling error:", e);
+      }
+      // gentle backoff handled below by interval delay
+    } finally {
+      pollingBusy.current = false;
+    }
+  }, [traceMode]);
 
-      await connectAnalyzer(ip, port);
-      isConnectedRef.current = true;
+  const startPolling = useCallback(() => {
+    if (pollingTimer.current != null) return;
+    // do one immediately for fast first paint
+    void pollOnce();
+    pollingTimer.current = window.setInterval(() => {
+      if (!isConnectedRef.current) return;
+      void pollOnce();
+    }, POLL_INTERVAL_MS) as unknown as number;
+  }, [pollOnce]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingTimer.current != null) {
+      window.clearInterval(pollingTimer.current);
+      pollingTimer.current = null;
+    }
+  }, []);
+
+  // ---------- snapshot / hydration ----------
+  const hydrateFromSnapshot = useCallback(async () => {
+    try {
+      const s: Snapshot = await getSnapshot(); // ~6s timeout inside analyzer.ts
+      if (s.centerHz != null) setCenterMHz(hzToMHz(s.centerHz));
+      if (s.spanHz != null) setSpanMHz(hzToMHz(s.spanHz));
+      if (s.rbwHz != null) setRbwMHz(hzToMHz(s.rbwHz));
+      if (s.vbwHz != null) setVbwMHz(hzToMHz(s.vbwHz));
+      if (s.refDbm != null) setRefLevel(s.refDbm);
+    } catch (e) {
+      console.warn("Snapshot warning:", e);
+    }
+  }, []);
+
+  // ---------- connect / disconnect ----------
+  const handleConnect = useCallback(async () => {
+    try {
+      const res = await connectAnalyzer(ip, port); // keep your original signature
+      if (res?.identity) setIdentity(res.identity);
       setIsConnected(true);
+      isConnectedRef.current = true;
 
-      // FAST first paint
+      // start drawing immediately (grid shows even before data)
       startRendering();
       startPolling();
 
-      // Hydrate (non-blocking)
-      hydrateFromInstrument().catch((e) => console.warn("Hydrate warning:", e));
-
-      console.log(`Connected to analyzer at ${ip}:${port}`);
+      // hydrate sweep settings
+      await hydrateFromSnapshot();
     } catch (e) {
       console.error("Connect error:", e);
-      alert("Failed to connect to analyzer");
-    } finally {
-      setConnecting(false);
+      setIsConnected(false);
+      isConnectedRef.current = false;
     }
-  }
+  }, [ip, port, startRendering, startPolling, hydrateFromSnapshot]);
 
-  async function handleDisconnect() {
-    stopPolling();   // freeze last frame
-    stopRendering(); // keep canvas as-is
+  const handleDisconnect = useCallback(async () => {
+    stopPolling();
+    // keep the last frame on canvas; we keep the render loop running so grid remains visible
     try {
       await disconnectAnalyzer();
     } catch (e) {
@@ -151,486 +262,200 @@ export default function SpectrumView() {
     } finally {
       setIsConnected(false);
       isConnectedRef.current = false;
-      console.log("Disconnected");
     }
-  }
+  }, [stopPolling]);
 
-  /* ---------- Apply Config ---------- */
-
-  function clampRefLevel(x: number) {
-    if (!Number.isFinite(x)) return refLevel;
-    return Math.max(-150, Math.min(30, x)); // allow negatives; clamp to safe range
-  }
-
-  async function handleUpdateSweep() {
-    if (!isConnectedRef.current) {
-      alert("Connect first");
-      return;
-    }
-    const wasPolling = pollingRef.current;
-    if (wasPolling) stopPolling(); // avoid “unable to update sweep”
-
+  // ---------- apply sweep ----------
+  const handleApplySweep = useCallback(async () => {
+    // Pause polling to avoid instrument rejecting changes during transfers
+    stopPolling();
     try {
-      const centerHz = ((startFreq + stopFreq) / 2) * 1e6;
-      const spanHz = (stopFreq - startFreq) * 1e6;
-      const rbwHz = rbw * 1e6;
-      const vbwHz = vbw * 1e6;
-      const refDbm = clampRefLevel(refLevel);
-
-      await configureSweep({ centerHz, spanHz, rbwHz, vbwHz, refDbm });
-      await sleep(120); // let instrument settle
-
-      if (traceMode === "MAX_HOLD") clearMaxHold(); // optional: reset hold
-      console.log("Sweep updated");
+      await configureSweep({
+        centerHz: mhzToHz(centerMHz),
+        spanHz: mhzToHz(spanMHz),
+        rbwHz: mhzToHz(rbwMHz),
+        vbwHz: mhzToHz(vbwMHz),
+        refDbm: refLevel,
+      });
+      // re-hydrate in case instrument quantized values
+      await hydrateFromSnapshot();
+      // clear local max if we’re changing sweep
+      clearMax();
     } catch (e) {
-      console.error("Update sweep error:", e);
-      alert("Unable to update sweep");
+      console.error("Sweep update error:", e);
     } finally {
-      if (isConnectedRef.current && wasPolling) startPolling();
+      if (isConnectedRef.current) startPolling();
     }
-  }
+  }, [centerMHz, spanMHz, rbwMHz, vbwMHz, refLevel, hydrateFromSnapshot, startPolling, stopPolling]);
 
-  /* ---------- Polling: sequential, no overlap ---------- */
-
-  async function pollOnce() {
-    try {
-      const csv = await getRawDataCsv(); // 2s timeout, throws "empty" if no data
-      if (!isConnectedRef.current || !pollingRef.current) return;
-
-      const arr = csv
-        .split(",")
-        .map((n) => Number(n))
-        .filter((n) => Number.isFinite(n));
-      if (!arr.length) return;
-
-      const width = sizeRef.current.w;
-      const dec = decimateToWidth(arr, width);
-
-      if (!prevRef.current || prevRef.current.length !== width) prevRef.current = new Float32Array(dec);
-      if (!nextRef.current || nextRef.current.length !== width) nextRef.current = new Float32Array(dec);
-      if (!workRef.current || workRef.current.length !== width) workRef.current = new Float32Array(width);
-      if (!holdRef.current || holdRef.current.length !== width) {
-        holdRef.current = new Float32Array(width);
-        holdRef.current.fill(-1e9);
-      }
-
-      prevRef.current.set(nextRef.current);
-      nextRef.current.set(dec);
-
-      if (traceMode === "MAX_HOLD" && holdRef.current) {
-        const h = holdRef.current;
-        for (let i = 0; i < dec.length; i++) if (dec[i] > h[i]) h[i] = dec[i];
-      }
-
-      lastServerFrameAt.current = performance.now();
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      if (msg.startsWith("not-connected")) {
-        // stop polling but DO NOT flip isConnected; user can reconnect
-        pollingRef.current = false;
-        return;
-      }
-      // timeout/server-error/empty -> ignore, keep UI live
-    }
-  }
-
-  function startPolling() {
-    if (pollingRef.current) return;
-    pollingRef.current = true;
-
-    const loop = async () => {
-      if (!pollingRef.current || !isConnectedRef.current) return;
-      await pollOnce();
-      if (!pollingRef.current || !isConnectedRef.current) return;
-      setTimeout(loop, pollIntervalMsRef.current);
-    };
-
-    // immediate first poll
-    pollOnce().finally(() => setTimeout(loop, pollIntervalMsRef.current));
-  }
-
-  function stopPolling() {
-    pollingRef.current = false;
-  }
-
-  /* ---------- Drawing loop ---------- */
-
-  function startRendering() {
-    // mark as if we just received a frame so first draw doesn't lag
-    lastServerFrameAt.current = performance.now();
-
-    const draw = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d")!;
-      const { w, h } = sizeRef.current;
-      const dpr = window.devicePixelRatio || 1;
-
-      // grid
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-      drawGrid(ctx, w, h);
-
-      const prev = prevRef.current;
-      const next = nextRef.current;
-      const work = workRef.current;
-
-      if (prev && next && work) {
-        const elapsed = performance.now() - lastServerFrameAt.current;
-        const t = Math.min(1, elapsed / pollIntervalMsRef.current);
-        lerpArrays(prev, next, t, work);
-
-        const top = refLevel;
-        const bottom = refLevel - dbPerDiv * 10;
-        const fullSpan = Math.max(1e-6, top - bottom);
-
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = "#22c55e";
-        ctx.beginPath();
-        for (let i = 0; i < work.length; i++) {
-          const x = (i / (work.length - 1)) * w;
-          const v = work[i];
-          const ratio = (top - v) / fullSpan;
-          const y = Math.min(h, Math.max(0, ratio * h));
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        if (traceMode === "MAX_HOLD" && holdRef.current) {
-          const hold = holdRef.current;
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = "#6b21a8";
-          ctx.beginPath();
-          for (let i = 0; i < hold.length; i++) {
-            const x = (i / (hold.length - 1)) * w;
-            const v = hold[i];
-            const ratio = (top - v) / fullSpan;
-            const y = Math.min(h, Math.max(0, ratio * h));
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          ctx.stroke();
-        }
-      }
-
-      rafId.current = requestAnimationFrame(draw);
-    };
-
-    if (rafId.current) cancelAnimationFrame(rafId.current);
-    rafId.current = requestAnimationFrame(draw);
-  }
-
-  function stopRendering() {
-    if (rafId.current) cancelAnimationFrame(rafId.current);
-    rafId.current = null;
-    // Do not clear canvas → freeze last frame
-  }
-
-  /* ---------- Grid & canvas init ---------- */
-
-  function clearMaxHold() {
-    if (holdRef.current) holdRef.current.fill(-1e9);
-  }
-
-  function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
-    // background
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "rgba(99, 102, 241, 0.08)");
-    grad.addColorStop(1, "rgba(99, 102, 241, 0.02)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-
-    // 10x10 grid
-    const divisions = 10;
-    ctx.lineWidth = 1;
-
-    // horizontal lines + labels
-    for (let i = 0; i <= divisions; i++) {
-      const y = (i / divisions) * h;
-      ctx.strokeStyle = i === 0 || i === divisions ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.1)";
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-
-      const labelDbm = refLevel - i * dbPerDiv;
-      if (i % 2 === 0) {
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
-        ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto";
-        ctx.textBaseline = "middle";
-        ctx.fillText(`${labelDbm} dBm`, 6, Math.min(h - 10, Math.max(10, y)));
-      }
-    }
-
-    // vertical lines
-    for (let i = 0; i <= divisions; i++) {
-      const x = (i / divisions) * w;
-      ctx.strokeStyle = i === 0 || i === divisions ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.1)";
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-      ctx.stroke();
-    }
-  }
-
-  function initCanvasAndGrid() {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // size
-    const rect = canvas.getBoundingClientRect();
-    sizeRef.current = {
-      w: Math.max(200, Math.round(rect.width || 800)),
-      h: Math.max(200, Math.round(rect.height || 520)),
-    };
-
-    // DPI
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(sizeRef.current.w * dpr);
-    canvas.height = Math.round(sizeRef.current.h * dpr);
-
-    // first grid paint (so you see the skeleton before connecting)
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, sizeRef.current.w, sizeRef.current.h);
-      drawGrid(ctx, sizeRef.current.w, sizeRef.current.h);
-    }
-  }
-
-  /* ---------- Canvas sizing & initial grid ---------- */
-
+  // ensure grid visible even when nothing else is happening
   useEffect(() => {
-    initCanvasAndGrid();
+    startRendering();
+    return () => stopRendering();
+  }, [startRendering, stopRendering]);
 
-    const canvas = canvasRef.current!;
-    const ro = new ResizeObserver(() => {
-      const rect = canvas.getBoundingClientRect();
-      sizeRef.current = {
-        w: Math.max(200, Math.round(rect.width)),
-        h: Math.max(200, Math.round(rect.height)),
-      };
-
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(sizeRef.current.w * dpr);
-      canvas.height = Math.round(sizeRef.current.h * dpr);
-
-      // repaint static grid on resize
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, sizeRef.current.w, sizeRef.current.h);
-        drawGrid(ctx, sizeRef.current.w, sizeRef.current.h);
-      }
-
-      // (re)allocate buffers to new width
-      const width = sizeRef.current.w;
-      prevRef.current = new Float32Array(width);
-      nextRef.current = new Float32Array(width);
-      workRef.current = new Float32Array(width);
-      holdRef.current = new Float32Array(width);
-      holdRef.current.fill(-1e9);
-    });
-
-    ro.observe(canvas);
-    return () => ro.disconnect();
-  }, []);
-
-  /* ---------- Cleanup ---------- */
-
-  useEffect(() => {
-    return () => {
-      stopPolling();
-      stopRendering();
-    };
-  }, []);
-
-  /* ===================== Render ===================== */
-
+  // ---------- UI ----------
   return (
-    <div>
-      <PageHeader title="Spectrum View" subtitle="Analyze real-time frequency domain data" />
+    <div className="mx-auto max-w-6xl p-4">
+      <h1 className="text-2xl font-semibold mb-3">RF Automation APP — Spectrum View</h1>
 
-      {/* Connection Controls */}
-      <div className="flex items-center gap-2 mb-3">
-        <input
-          type="text"
-          value={ip}
-          onChange={(e) => setIp(e.target.value)}
-          placeholder="Analyzer IP"
-          className="rounded-xl border px-3 py-1 text-sm w-44"
-        />
-        <input
-          type="number"
-          value={port}
-          onChange={(e) => setPort(Number(e.target.value))}
-          className="rounded-xl border px-3 py-1 text-sm w-24"
-        />
-        {isConnected ? (
-          <button onClick={handleDisconnect} className="rounded-xl bg-red-500 text-white px-3 py-1 text-xs">
-            Disconnect
-          </button>
-        ) : (
-          <button
-            onClick={handleConnect}
-            className={`rounded-xl ${connecting ? "bg-zinc-400" : "bg-green-600"} text-white px-3 py-1 text-xs`}
-            disabled={!ip || connecting}
-            title={connecting ? "Connecting..." : "Connect to analyzer"}
-          >
-            {connecting ? "Connecting…" : "Connect"}
-          </button>
-        )}
-      </div>
-
-      {/* Status row + Trace mode indicator */}
-      <div className="flex flex-wrap items-center gap-3 mb-3 text-xs text-zinc-700">
-        <span className="px-2 py-1 rounded-full border">
-          Trace: {traceMode === "MAX_HOLD" ? "Max Hold" : "Clear/Write"}
-        </span>
-        <div className="flex items-center gap-2">
-          <span className="font-medium">Ref:</span>
-          <span>{refLevel} dBm</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="font-medium">dB/Div:</span>
-          <select
-            className="rounded-lg border px-2 py-1"
-            value={dbPerDiv}
-            onChange={(e) => setDbPerDiv(Number(e.target.value))}
-          >
-            {[1, 2, 5, 10].map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr,360px] gap-4">
-        <Card className="p-4">
-          <div className="font-medium">Spectrum Analysis</div>
-          <div className="text-sm text-zinc-500">Real-time frequency domain monitoring</div>
-          <canvas
-            ref={canvasRef}
-            className="mt-3 w-full h-[520px] rounded-xl border bg-gradient-to-b from-blue-50 to-blue-100/30"
-          />
-        </Card>
-
-        <Card className="p-4 w-full">
-          <div className="flex items-center gap-3 text-sm mb-3">
-            {(["Config", "Markers"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-3 py-2 rounded-full border ${
-                  tab === t ? "bg-white shadow" : "bg-zinc-50 border-transparent"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-
-          {tab === "Config" ? (
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleUpdateSweep();
-              }}
-            >
-              <div>
-                <div className="text-xs text-zinc-500">Start Freq (MHz)</div>
-                <input
-                  className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
-                  type="number"
-                  step="any"
-                  value={startFreq}
-                  onChange={(e) => setStartFreq(Number(e.target.value))}
-                />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Canvas card (wide) */}
+        <div className="lg:col-span-2">
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="p-3 border-b border-gray-100 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                {isConnected ? (
+                  <span>Connected {identity ? `to ${identity}` : ""}</span>
+                ) : (
+                  <span>Disconnected</span>
+                )}
               </div>
-              <div>
-                <div className="text-xs text-zinc-500">Stop Freq (MHz)</div>
-                <input
-                  className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
-                  type="number"
-                  step="any"
-                  value={stopFreq}
-                  onChange={(e) => setStopFreq(Number(e.target.value))}
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  className="px-3 py-1.5 text-sm rounded-md bg-indigo-600 text-white disabled:opacity-40"
+                  onClick={handleConnect}
+                  disabled={isConnected}
+                >
+                  Connect
+                </button>
+                <button
+                  className="px-3 py-1.5 text-sm rounded-md bg-gray-200 text-gray-900 disabled:opacity-40"
+                  onClick={handleDisconnect}
+                  disabled={!isConnected}
+                >
+                  Disconnect
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-xs text-zinc-500">RBW (MHz)</div>
-                  <input
-                    className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
-                    type="number"
-                    step="any"
-                    value={rbw}
-                    onChange={(e) => setRbw(Number(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <div className="text-xs text-zinc-500">VBW (MHz)</div>
-                  <input
-                    className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
-                    type="number"
-                    step="any"
-                    value={vbw}
-                    onChange={(e) => setVbw(Number(e.target.value))}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-[1fr,auto,auto] gap-3 items-end">
-                <div>
-                  <div className="text-xs text-zinc-500">Reference Level (dBm)</div>
-                  <input
-                    className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
-                    type="number"
-                    step="any"
-                    value={refLevel}
-                    onChange={(e) => setRefLevel(Number(e.target.value))}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-500">Max Hold</label>
-                  <input
-                    type="checkbox"
-                    checked={traceMode === "MAX_HOLD"}
-                    onChange={(e) => {
-                      const on = e.target.checked;
-                      setTraceMode(on ? "MAX_HOLD" : "CLEAR_WRITE");
-                      if (on) {
-                        if (holdRef.current && nextRef.current) holdRef.current.set(nextRef.current);
-                      }
-                    }}
-                  />
-                </div>
-                <button type="button" className="rounded-xl border px-3 py-2 text-xs" onClick={clearMaxHold}>
+            </div>
+
+            <div className="p-3">
+              <canvas
+                ref={canvasRef}
+                width={CANVAS_W}
+                height={CANVAS_H}
+                className="w-full rounded-lg bg-black"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  className={`px-3 py-1.5 text-sm rounded-md ${
+                    traceMode === "MAX_HOLD" ? "bg-amber-600 text-white" : "bg-gray-200 text-gray-900"
+                  }`}
+                  onClick={() =>
+                    setTraceMode((m) => (m === "MAX_HOLD" ? "CLEAR_WRITE" : "MAX_HOLD"))
+                  }
+                >
+                  {traceMode === "MAX_HOLD" ? "Max Hold (On)" : "Max Hold"}
+                </button>
+                <button
+                  className="px-3 py-1.5 text-sm rounded-md bg-gray-200 text-gray-900"
+                  onClick={clearMax}
+                >
                   Clear Max
                 </button>
               </div>
-
-              <button
-                type="submit"
-                className="rounded-xl bg-[#6B77F7] text-white w-full py-2"
-                disabled={!isConnected}
-                title="Press Enter to apply"
-              >
-                Update Sweep (Enter)
-              </button>
-            </form>
-          ) : (
-            <div className="space-y-3">
-              <div className="text-sm font-medium">Markers</div>
-              <div className="rounded-xl border border-dashed p-6 text-sm text-zinc-500 grid place-items-center">
-                No markers added
-              </div>
             </div>
-          )}
-        </Card>
+          </div>
+        </div>
+
+        {/* Control card */}
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="p-3 border-b border-gray-100">
+            <h2 className="font-medium">Spectrum Controls</h2>
+          </div>
+
+          <div className="p-3 grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs text-gray-600">IP</label>
+              <input
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={ip}
+                onChange={(e) => setIp(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600">Port</label>
+              <input
+                type="number"
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={port}
+                onChange={(e) => setPort(parseInt(e.target.value || "0", 10))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600">Center (MHz)</label>
+              <input
+                type="number"
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={centerMHz}
+                onChange={(e) => setCenterMHz(parseFloat(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600">Span (MHz)</label>
+              <input
+                type="number"
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={spanMHz}
+                onChange={(e) => setSpanMHz(parseFloat(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600">RBW (MHz)</label>
+              <input
+                type="number"
+                step="0.001"
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={rbwMHz}
+                onChange={(e) => setRbwMHz(parseFloat(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600">VBW (MHz)</label>
+              <input
+                type="number"
+                step="0.001"
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={vbwMHz}
+                onChange={(e) => setVbwMHz(parseFloat(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600">Ref Level (dBm)</label>
+              <input
+                type="number"
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={refLevel}
+                onChange={(e) => setRefLevel(parseFloat(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600">dB / Div</label>
+              <input
+                type="number"
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                value={dbPerDiv}
+                onChange={(e) => setDbPerDiv(parseFloat(e.target.value))}
+              />
+            </div>
+
+            <div className="col-span-2 flex gap-2 pt-1">
+              <button
+                className="px-3 py-1.5 text-sm rounded-md bg-indigo-600 text-white disabled:opacity-40"
+                onClick={handleApplySweep}
+                disabled={!isConnected}
+              >
+                Apply Sweep
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
