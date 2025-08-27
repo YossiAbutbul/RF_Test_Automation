@@ -3,6 +3,17 @@ const RAW_BASE =
   (import.meta as any)?.env?.VITE_API_BASE?.trim() || "http://127.0.0.1:8000";
 const API_BASE = RAW_BASE.replace(/0\.0\.0\.0/i, "127.0.0.1").replace(/\/$/, "");
 
+type ConnectParams = { ip: string; port?: number };
+
+export type SweepConfig = {
+  centerHz?: number;
+  spanHz?: number;
+  rbwHz?: number;
+  vbwHz?: number;
+  refDbm?: number;
+};
+
+
 function url(path: string) {
   return `${API_BASE}${path}`;
 }
@@ -63,7 +74,7 @@ export async function ping(): Promise<boolean> {
 }
 
 // ----- Analyzer control -----
-export async function connectAnalyzer(ip: string, port: number) {
+export async function connectAnalyzer({ ip, port }: ConnectParams) {
   console.log("POST", url("/analyzer/connect"), { ip, port });
   const r = await httpPost("/analyzer/connect", { ip, port }, 4000);
   const j = await r.json();
@@ -78,23 +89,33 @@ export async function disconnectAnalyzer() {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// analyzer.ts
 export async function configureSweep(p: {
-  centerHz: number;
-  spanHz: number;
-  rbwHz: number;
-  vbwHz: number;
-  refDbm: number;
+  centerHz?: number;
+  spanHz?: number;
+  rbwHz?: number;
+  vbwHz?: number;
+  refDbm?: number;
+  traceMode?: string;   // also covers your Max Hold call
 }) {
-  await httpPost("/analyzer/set-center-frequency", { value: p.centerHz, units: "HZ" }, 2500);
-  await sleep(20);
-  await httpPost("/analyzer/set-span", { value: p.spanHz, units: "HZ" }, 2500);
-  await sleep(20);
-  await httpPost("/analyzer/set-rbw", { value: p.rbwHz, units: "HZ" }, 2500);
-  await sleep(20);
-  await httpPost("/analyzer/set-vbw", { value: p.vbwHz, units: "HZ" }, 2500);
-  await sleep(20);
-  await httpPost("/analyzer/set-ref-level", { dbm: p.refDbm }, 2500);
+  if (p.centerHz !== undefined)
+    await httpPost("/analyzer/set-center-frequency", { value: p.centerHz, units: "HZ" }, 2500);
+  if (p.spanHz !== undefined)
+    await sleep(20), await httpPost("/analyzer/set-span", { value: p.spanHz, units: "HZ" }, 2500);
+  if (p.rbwHz !== undefined)
+    await sleep(20), await httpPost("/analyzer/set-rbw", { value: p.rbwHz, units: "HZ" }, 2500);
+  if (p.vbwHz !== undefined)
+    await sleep(20), await httpPost("/analyzer/set-vbw", { value: p.vbwHz, units: "HZ" }, 2500);
+  if (p.refDbm !== undefined)
+    await sleep(20), await httpPost("/analyzer/set-ref-level", { dbm: p.refDbm }, 2500);
+
+  // future extension
+  if (p.traceMode === "MAX_HOLD") {
+    // add route later, or just ignore for now
+    console.log("TODO: handle traceMode");
+  }
 }
+
 
 // Polling wants to be snappy
 export async function getRawDataCsv(): Promise<string> {
