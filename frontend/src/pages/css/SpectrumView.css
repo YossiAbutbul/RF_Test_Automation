@@ -1,0 +1,250 @@
+/* Base layout */
+.spectrum-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 18px;
+  background: #f7f8fb;
+  min-height: 100vh;
+  box-sizing: border-box;
+  color: #111827;
+}
+
+/* Header = compact toolbar */
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 2px;
+}
+
+.title-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.1px;
+}
+
+.status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1;
+  color: #6b7280;
+}
+
+.status-line .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444; /* default red */
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
+}
+
+.status-line.connected {
+  color: #065f46;
+}
+
+.status-line.connected .status-dot {
+  background: #10b981; /* green */
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+}
+
+.toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conn-input {
+  width: 120px;
+  height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  font-size: 13px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.conn-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
+/* Buttons */
+.btn {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease,
+    transform 0.06s ease;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #1e4ed8;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #111827;
+  border-color: #d1d5db;
+}
+.btn-secondary:hover {
+  background: #e5e7eb;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+}
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+/* Main content layout */
+.content-row {
+  display: grid;
+  grid-template-columns: 1fr 320px; /* tighter, ordered */
+  gap: 16px;
+  align-items: start;
+}
+
+/* Cards */
+.plot-card,
+.controls-card {
+  background: #fff;
+  border: 1px solid #e6e7ee;
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 2px 6px rgba(27, 31, 35, 0.05);
+}
+
+/* Canvas */
+.spectrum-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* Tabs */
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 2px 2px 10px;
+}
+
+.tab {
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tab:hover {
+  background: #eef2f7;
+}
+.tab.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+/* Controls body */
+.tab-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Two inputs per row, consistent heights */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field > span {
+  font-size: 12px;
+  color: #374151;
+}
+
+.text-input {
+  height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  font-size: 13px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.text-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
+.row-actions {
+  margin-top: 2px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Markers */
+.markers-panel {
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  padding: 16px;
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+/* Hide scrollbars on SpectrumView page */
+.spectrum-page {
+  overflow: hidden;
+}
+
+/* If you want to force hide for the whole app */
+html,
+body {
+  overflow: hidden;
+}

@@ -1,459 +1,475 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import "./css/SpectrumView.css";
 import {
+  ping,
   connectAnalyzer,
   disconnectAnalyzer,
+  configureSweep,
   getRawDataCsv,
   getSnapshot,
-  configureSweep,
-} from "../api/analyzer";
+} from "@/api/analyzer";
 
+/* ---------- Types ---------- */
 type Snapshot = {
   centerHz?: number;
   spanHz?: number;
   rbwHz?: number;
   vbwHz?: number;
   refDbm?: number;
+  identity?: string;
 };
 
-type TraceMode = "CLEAR_WRITE" | "MAX_HOLD";
+type SweepForm = {
+  centerMHz: string;
+  spanMHz: string;
+  rbwMHz: string;
+  vbwMHz: string;
+  refDbm: string;
+  dbPerDiv: string;
+};
 
-const CANVAS_W = 900;
-const CANVAS_H = 420;
-const GRID_DIVS = 10;
-const POLL_INTERVAL_MS = 90; // smooth but not frantic
+/* ---------- Helpers ---------- */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const hzToMHz = (hz?: number) => (hz == null ? "" : (hz / 1e6).toString());
+const MHzToHzNumber = (v: string) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 1e6) : undefined;
+};
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/* ---------- Component ---------- */
 export default function SpectrumView() {
   // connection
   const [ip, setIp] = useState("172.16.10.1");
-  const [port, setPort] = useState(5555);
-  const [isConnected, setIsConnected] = useState(false);
-  const isConnectedRef = useRef(false);
-  const [identity, setIdentity] = useState<string | null>(null);
+  const [port, setPort] = useState<number | undefined>(5555);
+  const [connecting, setConnecting] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [identity, setIdentity] = useState<string | undefined>();
 
-  // sweep (UI state always mirrors the instrument; initialize to sensible defaults)
-  const [centerMHz, setCenterMHz] = useState(2400);
-  const [spanMHz, setSpanMHz] = useState(20);
-  const [rbwMHz, setRbwMHz] = useState(1);
-  const [vbwMHz, setVbwMHz] = useState(3);
-  const [refLevel, setRefLevel] = useState(-20);
-  const [dbPerDiv, setDbPerDiv] = useState(10);
-
-  // trace
-  const [traceMode, setTraceMode] = useState<TraceMode>("CLEAR_WRITE");
+  // canvas
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const maxHoldBuf = useRef<Float32Array | null>(null);
-  const lastTrace = useRef<Float32Array | null>(null);
-  const renderReq = useRef<number | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ w: 1200, h: 600 });
 
-  // polling control
-  const pollingTimer = useRef<number | null>(null);
-  const pollingBusy = useRef(false);
+  // polling / data
+  const lastFrameRef = useRef<Float32Array | null>(null);
+  const nextFrameRef = useRef<Float32Array | null>(null);
+  const lastUpdateTsRef = useRef<number>(0);
+  const pollingRef = useRef(false);
+  const stopPollingRef = useRef(false);
+  const backoffUntilRef = useRef(0);
 
-  // ---------- helpers ----------
-  const hzToMHz = (hz?: number) => (hz ?? 0) / 1e6;
-  const mhzToHz = (mhz: number) => Math.max(0, mhz) * 1e6;
+  // trace / axes config
+  const [dbPerDiv, setDbPerDiv] = useState(10);
+  const [refLevel, setRefLevel] = useState(0);
 
-  const clearMax = () => {
-    maxHoldBuf.current = null;
+  // form state
+  const [tab, setTab] = useState<"config" | "markers">("config");
+  const [form, setForm] = useState<SweepForm>({
+    centerMHz: "",
+    spanMHz: "",
+    rbwMHz: "",
+    vbwMHz: "",
+    refDbm: "0",
+    dbPerDiv: "10",
+  });
+
+  // resize (compact, keeps left card dominant)
+  useEffect(() => {
+    const onResize = () => {
+      const maxW = Math.min(window.innerWidth - 200, 1600);
+      const w = clamp(maxW, 1000, 1600);
+      const h = Math.round(w * 0.55);
+      setCanvasSize({ w, h });
+    };
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  /* ---------- Connect / Disconnect ---------- */
+  const handleToggleConnection = async () => {
+    if (connecting) return;
+
+    if (!connected) {
+      setConnecting(true);
+      try {
+        await ping();
+        const res = await connectAnalyzer({ ip, port });
+        setConnected(true);
+        setIdentity(res?.identity);
+        stopPollingRef.current = false;
+        await hydrateFromSnapshot();
+        startPollingLoop();
+      } catch (e) {
+        console.error("Connect failed:", e);
+      } finally {
+        setConnecting(false);
+      }
+    } else {
+      setConnecting(true);
+      try {
+        stopPollingRef.current = true;
+        await disconnectAnalyzer();
+        setConnected(false);
+      } catch (e) {
+        console.error("Disconnect failed:", e);
+      } finally {
+        setConnecting(false);
+      }
+    }
   };
 
-  // ---------- drawing ----------
-  const drawGridAndAxes = useCallback(
-    (ctx: CanvasRenderingContext2D) => {
-      // background
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  /* ---------- Snapshot → UI ---------- */
+  const hydrateFromSnapshot = async () => {
+    try {
+      const snap: Snapshot = await getSnapshot();
+      if (snap.identity) setIdentity(snap.identity);
 
-      // grid
-      ctx.strokeStyle = "#222";
-      ctx.lineWidth = 1;
+      const centerMHz = hzToMHz(snap.centerHz);
+      const spanMHz = hzToMHz(snap.spanHz);
+      const rbwMHz = hzToMHz(snap.rbwHz);
+      const vbwMHz = hzToMHz(snap.vbwHz);
+      const ref = snap.refDbm ?? 0;
 
-      const dx = CANVAS_W / GRID_DIVS;
-      const dy = CANVAS_H / GRID_DIVS;
+      setRefLevel(ref);
+      setForm((f) => ({
+        ...f,
+        centerMHz,
+        spanMHz,
+        rbwMHz,
+        vbwMHz,
+        refDbm: ref.toString(),
+        dbPerDiv: f.dbPerDiv || "10",
+      }));
 
-      ctx.beginPath();
-      for (let i = 0; i <= GRID_DIVS; i++) {
-        const x = Math.round(i * dx) + 0.5;
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, CANVAS_H);
+      const nDiv = Number(form.dbPerDiv);
+      if (Number.isFinite(nDiv)) setDbPerDiv(nDiv);
+    } catch (e) {
+      console.warn("Snapshot hydrate warning:", e);
+    }
+  };
+
+  /* ---------- Polling (unchanged cadence/backoff) ---------- */
+  const startPollingLoop = async () => {
+    if (pollingRef.current) return;
+    pollingRef.current = true;
+
+    while (!stopPollingRef.current) {
+      const now = Date.now();
+      if (now < backoffUntilRef.current) {
+        await sleep(140);
+        continue;
       }
-      for (let j = 0; j <= GRID_DIVS; j++) {
-        const y = Math.round(j * dy) + 0.5;
-        ctx.moveTo(0, y);
-        ctx.lineTo(CANVAS_W, y);
+
+      try {
+        const csv = await getRawDataCsv();
+        if (csv && typeof csv === "string") {
+          const values = csv
+            .split(",")
+            .map((s) => Number(s.trim()))
+            .filter((n) => Number.isFinite(n));
+          const arr = new Float32Array(values);
+          lastFrameRef.current = nextFrameRef.current ?? arr;
+          nextFrameRef.current = arr;
+          lastUpdateTsRef.current = performance.now();
+        }
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        if (msg.includes("timeout")) {
+          backoffUntilRef.current = Date.now() + 1100;
+        } else if (msg.includes("not-connected") || msg.includes("server-error")) {
+          break;
+        }
       }
-      ctx.stroke();
+      await sleep(90);
+    }
+    pollingRef.current = false;
+  };
 
-      // axes labels
-      ctx.fillStyle = "#bbb";
-      ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica";
-
-      // X labels: center/span
-      const startMHz = centerMHz - spanMHz / 2;
-      const stopMHz = centerMHz + spanMHz / 2;
-      const xLbl = `${startMHz.toFixed(3)} MHz  —  ${centerMHz.toFixed(3)} MHz  —  ${stopMHz.toFixed(3)} MHz`;
-      ctx.fillText(xLbl, 14, CANVAS_H - 8);
-
-      // Y labels from refLevel and db/div
-      for (let i = 0; i <= GRID_DIVS; i++) {
-        const y = Math.round(i * dy);
-        const value = refLevel - i * dbPerDiv;
-        const txt = `${value.toFixed(0)} dBm`;
-        ctx.fillText(txt, 10, Math.min(CANVAS_H - 14, Math.max(14, y + 4)));
-      }
-    },
-    [centerMHz, spanMHz, refLevel, dbPerDiv]
-  );
-
-  const drawTrace = useCallback(
-    (ctx: CanvasRenderingContext2D, buf: Float32Array, color: string) => {
-      if (!buf || buf.length === 0) return;
-      const minY = refLevel - GRID_DIVS * dbPerDiv;
-      const maxY = refLevel;
-
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = color;
-      ctx.beginPath();
-
-      const n = buf.length;
-      for (let i = 0; i < n; i++) {
-        const x = (i / (n - 1)) * (CANVAS_W - 1);
-        const dbm = buf[i];
-        // clamp
-        const yVal = Math.max(minY, Math.min(maxY, dbm));
-        const y = ((maxY - yVal) / (maxY - minY)) * (CANVAS_H - 1);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    },
-    [refLevel, dbPerDiv]
-  );
-
-  const render = useCallback(() => {
+  /* ---------- Drawing loop ---------- */
+  /* ---------- Drawing loop (Y labels only) ---------- */
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    drawGridAndAxes(ctx);
+    let rafId = 0;
+    const draw = () => {
+      const { w, h } = canvasSize;
 
-    // live trace
-    const l = lastTrace.current;
-    if (l) drawTrace(ctx, l, "#8b5cf6"); // purple
+      // background
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
 
-    // max hold overlay
-    const h = maxHoldBuf.current;
-    if (h) drawTrace(ctx, h, "#f59e0b"); // amber
-    renderReq.current = requestAnimationFrame(render);
-  }, [drawGridAndAxes, drawTrace]);
+      // grid
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 1;
+      const cols = 10, rows = 10;
+      for (let i = 1; i < cols; i++) {
+        const x = Math.round((i * w) / cols) + 0.5;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+      for (let j = 1; j < rows; j++) {
+        const y = Math.round((j * h) / rows) + 0.5;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
 
-  const startRendering = useCallback(() => {
-    if (renderReq.current != null) return;
-    renderReq.current = requestAnimationFrame(render);
-  }, [render]);
+      // ----- Y-axis labels ONLY -----
+      ctx.fillStyle = "#fff";
+      const fontSize = Math.max(12, Math.min(20, Math.round(h * 0.025)));
+      ctx.font = `${fontSize}px ui-sans-serif, system-ui, -apple-system`;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
 
-  const stopRendering = useCallback(() => {
-    if (renderReq.current != null) {
-      cancelAnimationFrame(renderReq.current);
-      renderReq.current = null;
-    }
-  }, []);
+      const ref = refLevel, div = dbPerDiv;
+      for (let i = 0; i <= rows; i++) {
+        const y = Math.round((i * h) / rows);
+        ctx.fillText(`${ref - i * div} dBm`, 6, y + (i === 0 ? 8 : 0));
+      }
+      // --------------------------------
 
-  // ---------- polling ----------
-  const pollOnce = useCallback(async () => {
-    if (pollingBusy.current) return;
-    pollingBusy.current = true;
-    try {
-      const csv = await getRawDataCsv(); // analyzer.ts handles its own timeout (~2s)
-      // CSV → Float32Array
-      const parts = csv.split(",").map((s) => parseFloat(s));
-      const arr = new Float32Array(parts.length);
-      for (let i = 0; i < parts.length; i++) arr[i] = parts[i];
-
-      // update live
-      lastTrace.current = arr;
-
-      // update max-hold locally if enabled
-      if (traceMode === "MAX_HOLD") {
-        const h = maxHoldBuf.current;
-        if (!h || h.length !== arr.length) {
-          maxHoldBuf.current = new Float32Array(arr);
-        } else {
-          for (let i = 0; i < arr.length; i++) {
-            if (arr[i] > h[i]) h[i] = arr[i];
-          }
+      // trace
+      const last = lastFrameRef.current;
+      const next = nextFrameRef.current;
+      if (next) {
+        let use = next;
+        if (last && last.length === next.length) {
+          const dt = performance.now() - lastUpdateTsRef.current;
+          const alpha = Math.max(0, Math.min(1, dt / 90));
+          const out = new Float32Array(next.length);
+          for (let i = 0; i < next.length; i++) out[i] = last[i] + (next[i] - last[i]) * alpha;
+          use = out;
         }
+
+        ctx.strokeStyle = "#7c3aed";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        const n = use.length;
+        const pixelsPerDiv = h / rows;
+        for (let i = 0; i < n; i++) {
+          const x = (i / (n - 1)) * w;
+          const v = use[i];
+          const y = ((ref - v) / dbPerDiv) * pixelsPerDiv;
+          const yy = Math.max(0, Math.min(h - 1, y));
+          if (i === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
       }
-    } catch (e: any) {
-      const msg = String(e?.message ?? e);
-      if (msg.includes("timeout")) {
-        console.warn("Polling timeout — backing off.");
-      } else if (msg.includes("not-connected") || msg.includes("server-error")) {
-        console.warn("Polling error:", msg);
-      } else {
-        console.warn("Polling error:", e);
-      }
-      // gentle backoff handled below by interval delay
-    } finally {
-      pollingBusy.current = false;
-    }
-  }, [traceMode]);
 
-  const startPolling = useCallback(() => {
-    if (pollingTimer.current != null) return;
-    // do one immediately for fast first paint
-    void pollOnce();
-    pollingTimer.current = window.setInterval(() => {
-      if (!isConnectedRef.current) return;
-      void pollOnce();
-    }, POLL_INTERVAL_MS) as unknown as number;
-  }, [pollOnce]);
+      rafId = requestAnimationFrame(draw);
+    };
 
-  const stopPolling = useCallback(() => {
-    if (pollingTimer.current != null) {
-      window.clearInterval(pollingTimer.current);
-      pollingTimer.current = null;
-    }
-  }, []);
+    rafId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafId);
+  }, [canvasSize, refLevel, dbPerDiv]); // ⬅ removed form.centerMHz/form.spanMHz
 
-  // ---------- snapshot / hydration ----------
-  const hydrateFromSnapshot = useCallback(async () => {
-    try {
-      const s: Snapshot = await getSnapshot(); // ~6s timeout inside analyzer.ts
-      if (s.centerHz != null) setCenterMHz(hzToMHz(s.centerHz));
-      if (s.spanHz != null) setSpanMHz(hzToMHz(s.spanHz));
-      if (s.rbwHz != null) setRbwMHz(hzToMHz(s.rbwHz));
-      if (s.vbwHz != null) setVbwMHz(hzToMHz(s.vbwHz));
-      if (s.refDbm != null) setRefLevel(s.refDbm);
-    } catch (e) {
-      console.warn("Snapshot warning:", e);
-    }
-  }, []);
 
-  // ---------- connect / disconnect ----------
-  const handleConnect = useCallback(async () => {
-    try {
-      const res = await connectAnalyzer(ip, port); // keep your original signature
-      if (res?.identity) setIdentity(res.identity);
-      setIsConnected(true);
-      isConnectedRef.current = true;
+  /* ---------- Apply Sweep (unchanged) ---------- */
+  const handleApplySweep = async () => {
+    if (!connected) return;
 
-      // start drawing immediately (grid shows even before data)
-      startRendering();
-      startPolling();
+    stopPollingRef.current = true;
+    await sleep(60);
 
-      // hydrate sweep settings
-      await hydrateFromSnapshot();
-    } catch (e) {
-      console.error("Connect error:", e);
-      setIsConnected(false);
-      isConnectedRef.current = false;
-    }
-  }, [ip, port, startRendering, startPolling, hydrateFromSnapshot]);
+    const centerHz = MHzToHzNumber(form.centerMHz);
+    const spanHz = MHzToHzNumber(form.spanMHz);
+    const rbwHz = MHzToHzNumber(form.rbwMHz);
+    const vbwHz = MHzToHzNumber(form.vbwMHz);
+    const ref = Number(form.refDbm);
+    const div = Number(form.dbPerDiv);
 
-  const handleDisconnect = useCallback(async () => {
-    stopPolling();
-    // keep the last frame on canvas; we keep the render loop running so grid remains visible
-    try {
-      await disconnectAnalyzer();
-    } catch (e) {
-      console.warn("Disconnect warning:", e);
-    } finally {
-      setIsConnected(false);
-      isConnectedRef.current = false;
-    }
-  }, [stopPolling]);
-
-  // ---------- apply sweep ----------
-  const handleApplySweep = useCallback(async () => {
-    // Pause polling to avoid instrument rejecting changes during transfers
-    stopPolling();
     try {
       await configureSweep({
-        centerHz: mhzToHz(centerMHz),
-        spanHz: mhzToHz(spanMHz),
-        rbwHz: mhzToHz(rbwMHz),
-        vbwHz: mhzToHz(vbwMHz),
-        refDbm: refLevel,
+        centerHz,
+        spanHz,
+        rbwHz,
+        vbwHz,
+        refDbm: Number.isFinite(ref) ? clamp(ref, -150, 30) : undefined,
       });
-      // re-hydrate in case instrument quantized values
+      if (Number.isFinite(div)) setDbPerDiv(div);
+      if (Number.isFinite(ref)) setRefLevel(ref);
       await hydrateFromSnapshot();
-      // clear local max if we’re changing sweep
-      clearMax();
     } catch (e) {
       console.error("Sweep update error:", e);
     } finally {
-      if (isConnectedRef.current) startPolling();
+      stopPollingRef.current = false;
+      startPollingLoop();
     }
-  }, [centerMHz, spanMHz, rbwMHz, vbwMHz, refLevel, hydrateFromSnapshot, startPolling, stopPolling]);
+  };
 
-  // ensure grid visible even when nothing else is happening
-  useEffect(() => {
-    startRendering();
-    return () => stopRendering();
-  }, [startRendering, stopRendering]);
+  /* ---------- Max Hold ---------- */
+  const handleMaxHold = async () => {
+    if (!connected) return;
+    try {
+      await configureSweep({ traceMode: "MAX_HOLD" });
+    } catch (e) {
+      console.error("Max Hold failed:", e);
+    }
+  };
 
-  // ---------- UI ----------
+  const onFormChange = (key: keyof SweepForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+  };
+
+  const connectionButtonLabel = useMemo(() => {
+    if (connecting) return connected ? "Disconnecting…" : "Connecting…";
+    return connected ? "Disconnect" : "Connect";
+  }, [connecting, connected]);
+
+  /* ---------- Render ---------- */
   return (
-    <div className="mx-auto max-w-6xl p-4">
-      <h1 className="text-2xl font-semibold mb-3">RF Automation APP — Spectrum View</h1>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Canvas card (wide) */}
-        <div className="lg:col-span-2">
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="p-3 border-b border-gray-100 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                {isConnected ? (
-                  <span>Connected {identity ? `to ${identity}` : ""}</span>
-                ) : (
-                  <span>Disconnected</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  className="px-3 py-1.5 text-sm rounded-md bg-indigo-600 text-white disabled:opacity-40"
-                  onClick={handleConnect}
-                  disabled={isConnected}
-                >
-                  Connect
-                </button>
-                <button
-                  className="px-3 py-1.5 text-sm rounded-md bg-gray-200 text-gray-900 disabled:opacity-40"
-                  onClick={handleDisconnect}
-                  disabled={!isConnected}
-                >
-                  Disconnect
-                </button>
-              </div>
-            </div>
-
-            <div className="p-3">
-              <canvas
-                ref={canvasRef}
-                width={CANVAS_W}
-                height={CANVAS_H}
-                className="w-full rounded-lg bg-black"
-              />
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  className={`px-3 py-1.5 text-sm rounded-md ${
-                    traceMode === "MAX_HOLD" ? "bg-amber-600 text-white" : "bg-gray-200 text-gray-900"
-                  }`}
-                  onClick={() =>
-                    setTraceMode((m) => (m === "MAX_HOLD" ? "CLEAR_WRITE" : "MAX_HOLD"))
-                  }
-                >
-                  {traceMode === "MAX_HOLD" ? "Max Hold (On)" : "Max Hold"}
-                </button>
-                <button
-                  className="px-3 py-1.5 text-sm rounded-md bg-gray-200 text-gray-900"
-                  onClick={clearMax}
-                >
-                  Clear Max
-                </button>
-              </div>
-            </div>
+    <div className="spectrum-page">
+      {/* Compact header with toolbar */}
+      <div className="header-row">
+        <div className="title-side">
+          <h1 className="page-title">Spectrum View</h1>
+          <div className={`status-line ${connected ? "connected" : "disconnected"}`}>
+            <span className="status-dot" aria-hidden />
+            {connected && identity ? `Connected to ${identity}` : "Not connected"}
           </div>
         </div>
 
-        {/* Control card */}
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="p-3 border-b border-gray-100">
-            <h2 className="font-medium">Spectrum Controls</h2>
+        <div className="toolbar">
+          <input
+            className="conn-input"
+            value={ip}
+            onChange={(e) => setIp(e.target.value)}
+            placeholder="IP"
+          />
+          <input
+            className="conn-input"
+            value={port ?? ""}
+            onChange={(e) => setPort(e.target.value ? Number(e.target.value) : undefined)}
+            placeholder="Port"
+            type="number"
+          />
+          <button
+            className={`btn ${connected ? "btn-danger" : "btn-primary"}`}
+            onClick={handleToggleConnection}
+            disabled={connecting}
+          >
+            {connectionButtonLabel}
+          </button>
+        </div>
+      </div>
+
+      <div className="content-row">
+        {/* Left: spectrum */}
+        <div className="plot-card">
+          <canvas
+            ref={canvasRef}
+            width={canvasSize.w}
+            height={canvasSize.h}
+            className="spectrum-canvas"
+          />
+        </div>
+
+        {/* Right: controls */}
+        <div className="controls-card">
+          <div className="tabs">
+            <button
+              className={`tab ${tab === "config" ? "active" : ""}`}
+              onClick={() => setTab("config")}
+            >
+              Configuration
+            </button>
+            <button
+              className={`tab ${tab === "markers" ? "active" : ""}`}
+              onClick={() => setTab("markers")}
+            >
+              Markers
+            </button>
           </div>
 
-          <div className="p-3 grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="block text-xs text-gray-600">IP</label>
-              <input
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={ip}
-                onChange={(e) => setIp(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-600">Port</label>
-              <input
-                type="number"
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={port}
-                onChange={(e) => setPort(parseInt(e.target.value || "0", 10))}
-              />
-            </div>
+          <div className="tab-body">
+            {tab === "config" ? (
+              <div className="config-form">
+                <div className="form-row">
+                  <label className="field">
+                    <span>Center Frequency [MHz]</span>
+                    <input
+                      value={form.centerMHz}
+                      onChange={onFormChange("centerMHz")}
+                      className="text-input"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Span [MHz]</span>
+                    <input
+                      value={form.spanMHz}
+                      onChange={onFormChange("spanMHz")}
+                      className="text-input"
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
 
-            <div>
-              <label className="block text-xs text-gray-600">Center (MHz)</label>
-              <input
-                type="number"
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={centerMHz}
-                onChange={(e) => setCenterMHz(parseFloat(e.target.value))}
-              />
-            </div>
+                <div className="form-row">
+                  <label className="field">
+                    <span>RBW [MHz]</span>
+                    <input
+                      value={form.rbwMHz}
+                      onChange={onFormChange("rbwMHz")}
+                      className="text-input"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>VBW [MHz]</span>
+                    <input
+                      value={form.vbwMHz}
+                      onChange={onFormChange("vbwMHz")}
+                      className="text-input"
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
 
-            <div>
-              <label className="block text-xs text-gray-600">Span (MHz)</label>
-              <input
-                type="number"
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={spanMHz}
-                onChange={(e) => setSpanMHz(parseFloat(e.target.value))}
-              />
-            </div>
+                <div className="form-row">
+                  <label className="field">
+                    <span>Ref Level [dBm]</span>
+                    <input
+                      value={form.refDbm}
+                      onChange={onFormChange("refDbm")}
+                      className="text-input"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>dB / div</span>
+                    <input
+                      value={form.dbPerDiv}
+                      onChange={onFormChange("dbPerDiv")}
+                      className="text-input"
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
 
-            <div>
-              <label className="block text-xs text-gray-600">RBW (MHz)</label>
-              <input
-                type="number"
-                step="0.001"
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={rbwMHz}
-                onChange={(e) => setRbwMHz(parseFloat(e.target.value))}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-600">VBW (MHz)</label>
-              <input
-                type="number"
-                step="0.001"
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={vbwMHz}
-                onChange={(e) => setVbwMHz(parseFloat(e.target.value))}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-600">Ref Level (dBm)</label>
-              <input
-                type="number"
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={refLevel}
-                onChange={(e) => setRefLevel(parseFloat(e.target.value))}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-600">dB / Div</label>
-              <input
-                type="number"
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                value={dbPerDiv}
-                onChange={(e) => setDbPerDiv(parseFloat(e.target.value))}
-              />
-            </div>
-
-            <div className="col-span-2 flex gap-2 pt-1">
-              <button
-                className="px-3 py-1.5 text-sm rounded-md bg-indigo-600 text-white disabled:opacity-40"
-                onClick={handleApplySweep}
-                disabled={!isConnected}
-              >
-                Apply Sweep
-              </button>
-            </div>
+                <div className="row-actions">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handleMaxHold}
+                    disabled={!connected}
+                  >
+                    Max Hold
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleApplySweep}
+                    disabled={!connected}
+                  >
+                    Apply Sweep
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="markers-panel">
+                <div className="markers-empty">No markers added</div>
+              </div>
+            )}
           </div>
         </div>
       </div>
