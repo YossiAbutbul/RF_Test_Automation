@@ -242,7 +242,7 @@ export default function SpectrumView() {
           use = out;
         }
 
-        ctx.strokeStyle = "#7c3aed";
+        ctx.strokeStyle = "#d0e421ff";
         ctx.lineWidth = 1.6;
         ctx.beginPath();
         const n = use.length;
