@@ -1,0 +1,224 @@
+/* ===== Test Run Modal ===== */
+
+.tsq-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+}
+
+.tsq-modal {
+  width: min(560px, 96vw);
+  background: #f1f2fb;
+  color: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+}
+.tsq-modal.is-running {
+  border-color: rgba(120, 180, 255, 0.28);
+}
+
+.tsq-run-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tsq-modal-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+.tsq-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-top-color: #86c6ff;
+  animation: tsq-spin 0.8s linear infinite;
+}
+@keyframes tsq-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Inputs */
+.tsq-run-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0 6px;
+}
+@media (max-width: 600px) {
+  .tsq-run-form {
+    grid-template-columns: 1fr;
+  }
+}
+.tsq-field {
+  display: grid;
+  gap: 4px;
+}
+.tsq-field > span {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.tsq-input,
+.tsq-input:focus {
+  background: #ffffff;
+  color: #000000;
+  padding: 7px 9px;
+  border-radius: 10px;
+  outline: none;
+}
+.tsq-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Meta */
+.tsq-run-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin: 6px 0 4px;
+}
+.tsq-meta-item {
+  background: #dfe3eb;
+  border: 1px dashed rgba(0, 0, 0, 0.404);
+  border-radius: 10px;
+  padding: 8px;
+}
+.tsq-meta-k {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.tsq-meta-v {
+  font-size: 12.5px;
+}
+
+/* Steps */
+.tsq-steps {
+  margin: 8px 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.tsq-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tsq-step .icon {
+  width: 18px;
+  display: grid;
+  place-items: center;
+}
+.tsq-step.idle .label {
+  opacity: 0.7;
+}
+.tsq-step.doing .label {
+  opacity: 1;
+}
+.tsq-step.done .label {
+  opacity: 1;
+}
+.tsq-step.error .label {
+  color: #ff6b6b;
+}
+
+/* Progress */
+.tsq-progress {
+  height: 6px;
+  background: #d0d2d8;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.tsq-progress .bar {
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, #3b82f6, #22d3ee);
+  animation: tsq-indet 1.2s ease-in-out infinite;
+}
+@keyframes tsq-indet {
+  0% {
+    transform: translateX(-60%);
+  }
+  50% {
+    transform: translateX(30%);
+  }
+  100% {
+    transform: translateX(150%);
+  }
+}
+
+/* Result + log */
+.tsq-result {
+  margin-top: 8px;
+}
+.tsq-chip {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+}
+.tsq-chip.pass {
+  background: #80d59b;
+  color: #00230a;
+  border: 1px solid rgba(128, 240, 160, 0.25);
+}
+.tsq-chip.fail {
+  background: #ff8b68;
+  color: #570101;
+  border: 1px solid rgba(255, 176, 176, 0.25);
+}
+
+.tsq-run-log {
+  margin-top: 10px;
+  background: #c7c9cf;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #000000;
+  padding: 8px;
+  border-radius: 10px;
+  max-height: 80px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Actions */
+.tsq-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+.tsq-btn {
+  background: #1f2430;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e9e9e9;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tsq-btn.primary {
+  background: #1e3a5f;
+}
+.tsq-btn.ghost {
+  background: transparent;
+  color: #333333e3;
+}
+
+.tsq-mac-warn {
+  outline: 2px solid currentColor;
+}

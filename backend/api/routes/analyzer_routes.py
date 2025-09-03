@@ -10,7 +10,9 @@ from api.models.analyzer_models import (
     RefLevelParam, MarkerNameParam, ScreenshotParam
 )
 from services.spectrum_service import get_analyzer, create_analyzer, release_analyzer
-from Spectrum import SpectrumAnalyzer, InstrumentNotConnected
+
+# IMPORTANT: import the real driver location
+from Spectrum.SpectrumAnalyzer import SpectrumAnalyzer  # path matches your repo
 
 router = APIRouter(prefix="/analyzer", tags=["Spectrum Analyzer"])
 
@@ -103,7 +105,6 @@ def get_center_frequency(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
     try:
         if hasattr(analyzer, "get_center_frequency"):
             return analyzer.get_center_frequency()
-        # fallback via start/stop if available
         start = _num(getattr(analyzer, "get_start_frequency")())
         stop  = _num(getattr(analyzer, "get_stop_frequency")())
         return str((start + stop) / 2.0)
@@ -156,26 +157,18 @@ def get_raw_data(analyzer: Optional[SpectrumAnalyzer] = Depends(_maybe_get_analy
     try:
         data = analyzer.get_raw_data()
         return PlainTextResponse(data)
-    except InstrumentNotConnected:
+    except Exception:
         return Response(status_code=204)
-    except Exception as e:
-        return Response(status_code=503, content=str(e))
 
-# ----- NEW: one-shot snapshot for fast hydration -----
+# ----- Snapshot for quick UI hydration -----
 
 @router.get("/snapshot")
 def snapshot(analyzer: SpectrumAnalyzer = Depends(get_analyzer)):
     out = {}
-    # center
     try:
         if hasattr(analyzer, "get_center_frequency"):
             out["centerHz"] = _num(analyzer.get_center_frequency())
-        else:
-            start = _num(getattr(analyzer, "get_start_frequency")())
-            stop  = _num(getattr(analyzer, "get_stop_frequency")())
-            out["centerHz"] = (start + stop) / 2.0
     except Exception: pass
-    # span / rbw / vbw / ref
     for key, getter in [
         ("spanHz", "get_span"),
         ("rbwHz",  "get_rbw"),

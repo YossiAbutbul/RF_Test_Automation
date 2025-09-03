@@ -5,8 +5,14 @@ from commands import hwtp_commands as cmd
 from BLE import BLE_Device
 import enums
 import time
-# from ..backend.Spectrum import SpectrumAnalyzer
-from backend.Spectrum import SpectrumAnalyzer
+import os, sys
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from backend.Spectrum.SpectrumAnalyzer import SpectrumAnalyzer
+
 
 load("coreclr")
 clr_init.load_runtime()
