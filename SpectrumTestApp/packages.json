@@ -1,0 +1,29 @@
+{
+  "Arad.WaterMeter.Communication.Headers": {
+    "version": "*"
+  },
+  "Arad.WaterMeter.Communication.Protocols": {
+    "version": "*"
+  },
+  "Arad.WaterMeter.Communication": {
+    "version": "*"
+  },
+  "Arad.WaterMeter.Communication.BLE": {
+    "version": "*"
+  },
+  "Arad.WaterMeter.Communication.Adapters.BLE": {
+    "version": "*"
+  },
+  "Arad.Utils.EndUnitLog": {
+    "version": "*"
+  },
+  "Arad.Utils.FileDownload": {
+    "version": "*"
+  },
+  "Arad.Utils.MemoryDumper": {
+    "version": "*"
+  },
+  "Arad.Utils.Encoder": {
+    "version": "*"
+  }
+}

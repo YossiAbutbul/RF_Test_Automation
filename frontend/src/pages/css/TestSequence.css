@@ -261,8 +261,13 @@
   display: none;
 }
 
+.tsq-title-toggle {
+  display: flex;
+  flex-direction: row;
+  cursor: pointer;
+}
+
 .tsq-icon-btn {
-  border: 1px solid #e5e7eb;
   background: #fff;
   border-radius: 10px;
   padding: 6px 8px;
@@ -355,67 +360,4 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-}
-
-/* Title + inline minimize */
-.tsq-title-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-.tsq-title-toggle:hover .tsq-title-text {
-  text-decoration: underline;
-}
-.tsq-title-caret {
-  transition: transform 0.16s ease;
-  opacity: 0.8;
-}
-.tsq-title-caret.is-open {
-  transform: rotate(180deg);
-}
-
-/* Borderless icon actions */
-.tsq-icon-btn {
-  border: none; /* remove border */
-  background: transparent; /* no background */
-  border-radius: 10px;
-  padding: 6px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: transform 0.08s ease, background 0.15s ease, opacity 0.15s ease;
-}
-.tsq-icon-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-  transform: translateY(-1px);
-}
-.tsq-icon-btn:active {
-  transform: translateY(0);
-  opacity: 0.9;
-}
-.tsq-icon-btn.ghost {
-  border: none;
-  background: transparent;
-}
-.tsq-icon-btn.danger {
-  color: #b91c1c;
-}
-
-/* Keep existing drag handle look */
-.tsq-test-drag-handle {
-  opacity: 0.5;
-  display: inline-grid;
-  place-items: center;
-  cursor: grab;
-}
-
-/* Optional: tighten header spacing since chevron moved left */
-.tsq-test-head {
-  padding: 10px 12px;
-}
-.tsq-test-title {
-  gap: 8px;
 }
