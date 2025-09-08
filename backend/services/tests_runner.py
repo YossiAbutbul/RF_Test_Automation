@@ -115,8 +115,8 @@ async def run_tx_power_stream(
             try: await _spec_call(spec.set_vbw, 100_000, "HZ")
             except Exception: pass
         if hasattr(spec, "set_ref_level"):
-            yield _evt("log", message="set_ref_level(0.0)")
-            try: await _spec_call(spec.set_ref_level, 0.0)
+            yield _evt("log", message="set_ref_level(20.0)")
+            try: await _spec_call(spec.set_ref_level, 20.0)
             except Exception: pass
         if hasattr(spec, "set_ref_level_offset"):
             yield _evt("log", message="set_ref_level_offset(20.5)")
@@ -154,7 +154,7 @@ async def run_tx_power_stream(
             yield _evt("result", measuredDbm=measured, pass_=passed)
 
             # ---- New step: CW OFF after measurement ----
-            yield _evt("step", key="cwOff", status="start", message="Turning off CW…")
+            yield _evt("step", key="cwOff", status="start", message="Turning off CW.")
             try:
                 await _dut_call(dut, "cw_off")
                 yield _evt("step", key="cwOff", status="done")

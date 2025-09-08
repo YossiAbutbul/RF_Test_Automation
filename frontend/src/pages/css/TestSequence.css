@@ -77,6 +77,7 @@
 }
 .tsq-btn.ghost {
   background: #fff;
+  color: #000000;
 }
 
 /* ===== Tabs with colored bubbles ===== */
@@ -262,9 +263,32 @@
 }
 
 .tsq-title-toggle {
-  display: flex;
-  flex-direction: row;
+  display: inline-flex;
+  align-items: center; /* centers caret vertically with the text */
+  gap: 8px;
   cursor: pointer;
+  padding: 0;
+  background: none;
+  border: 0;
+  line-height: 1; /* keeps the line compact so centering is exact */
+}
+
+.tsq-title-text {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tsq-title-caret {
+  display: inline-grid; /* gives us a square box around the SVG */
+  place-items: center; /* centers the icon perfectly in that box */
+  line-height: 0; /* removes extra inline spacing around SVG */
+  transform-origin: 50% 50%;
+  transition: transform 180ms ease;
+  transform: rotate(-90deg); /* collapsed = right */
+}
+
+.tsq-title-caret.is-open {
+  transform: rotate(0deg); /* expanded = down */
 }
 
 .tsq-icon-btn {
