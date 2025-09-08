@@ -23,7 +23,7 @@ type TestItem = {
 const TEST_LIBRARY = ["Tx Power", "Current Consumption", "Frequency Accuracy", "Spurious Emission", "OBW"];
 
 // Avoid duplicating `name` to prevent TS warning
-const NEW_TEST_DEFAULTS: Omit<TestItem, "id" | "type" | "name"> = {
+const NEW_TX_POWER_TEST_DEFAULTS: Omit<TestItem, "id" | "type" | "name"> = {
   runCondition: "Run Always",
   frequencyText: "918.5 MHz",
   powerText: "14",
@@ -85,7 +85,7 @@ export default function TestSequence() {
     const id = nextId.current++;
     setSequences((prev) => {
       const copy = { ...prev };
-      copy[tab] = [...copy[tab], { id, type: name, name, ...NEW_TEST_DEFAULTS }];
+      copy[tab] = [...copy[tab], { id, type: name, name, ...NEW_TX_POWER_TEST_DEFAULTS}];
       // collapse previous tests, keep the newly added open
       copy[tab] = copy[tab].map((t, i, arr) => (i === arr.length - 1 ? t : { ...t, minimized: true }));
       return copy;
