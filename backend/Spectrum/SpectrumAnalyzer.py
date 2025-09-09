@@ -112,23 +112,28 @@ class SpectrumAnalyzer:
         self.send_command(command)
         return self.read_response()
 
-    def send_and_wait(self, command, wait_for="1", timeout=3) -> bool:
-        """Send a command and wait for completion (*OPC?)."""
+    def send_and_wait(self, command, wait_for="1", timeout=8.0) -> bool:
+        """
+        Send a command and wait for operation complete.
+        Robust: keeps querying *OPC? until '1' or timeout.
+        """
         self.send_command(command)
-        self.send_command(self.cmd.build("operation_complete_query"))
-        start = time.time()
+        deadline = time.time() + timeout
 
-        while time.time() - start < timeout:
+        while time.time() < deadline:
             try:
-                resp = self.read_response()
-                if resp.strip() == wait_for:
+                resp = self.query(self.cmd.build("operation_complete_query"))  # typically '*OPC?'
+                if resp and resp.strip() == wait_for:
                     return True
             except InstrumentNotConnected:
                 raise
             except Exception:
+                # transient read/format hiccup; try again
                 pass
             time.sleep(0.1)
+
         raise TimeoutError(f"Timeout waiting for operation to complete after: {command}")
+
 
     @property
     def is_connected(self) -> bool:
