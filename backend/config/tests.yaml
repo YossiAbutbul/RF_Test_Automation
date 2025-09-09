@@ -1,0 +1,32 @@
+# Centralized RF test configuration
+version: 1
+
+defaults:
+  spectrum:
+    marker: "MARK1"
+    # default delay after each SCPI action (seconds)
+    default_delay_s: 1.0
+
+tests:
+  tx_power:
+    analyzer_setup:
+      span_hz: 5000000         # 5 MHz
+      rbw_hz: 100000           # 100 kHz 
+      vbw_hz: 100000           # 100 kHz 
+      ref_level_dbm: 20.0      # optional
+      ref_offset_db: 20.5      # optional
+      use_peak_detector: true
+    settle:
+      after_center_s: 0.00
+      after_cw_on_s: 0.60
+
+  frequency_accuracy:
+    base:
+      use_peak_detector: true
+      # optional settle after setting the center frequency
+      settle_after_center_s: 0.5
+      settle_after_cw_on_s: 1.0
+    zooms:
+      - { span_hz: 2000000, rbw_hz: 1000, vbw_hz: 3000, delay_s: 1.0 }
+      - { span_hz: 100000,  rbw_hz: 100, vbw_hz: 1000, delay_s: 1.0 }
+      - { span_hz: 10000,   rbw_hz: 100, vbw_hz: 1000, delay_s: 1.0 }

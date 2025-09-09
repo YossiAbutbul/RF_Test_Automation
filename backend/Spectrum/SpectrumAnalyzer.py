@@ -166,6 +166,11 @@ class SpectrumAnalyzer:
     def set_peak_detector(self) -> None:
         self.send_and_wait(self.cmd.build("set_peak_detector"))
 
+    def set_marker_to_center_frequency(self, mark_name="MARK1") -> None:
+        """Place the given marker at the current center frequency."""
+        self.send_and_wait(self.cmd.build("set_marker_to_center_frequency", mark_name=mark_name))
+
+
     def peak_search(self, mark_name="MARK1") -> None:
         self.send_and_wait(self.cmd.build("peak_search", mark_name=mark_name))
 

@@ -11,7 +11,7 @@
 }
 
 .tsq-modal {
-  width: min(560px, 96vw);
+  width: min(740px, 96vw);
   background: #f1f2fb;
   color: #000000;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -51,7 +51,7 @@
 /* Inputs */
 .tsq-run-form {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   gap: 8px;
   margin: 8px 0 6px;
 }
@@ -86,7 +86,7 @@
 /* Meta */
 .tsq-run-meta {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   gap: 8px;
   margin: 6px 0 4px;
 }
@@ -133,6 +133,14 @@
 }
 .tsq-step.error .label {
   color: #ff6b6b;
+}
+
+.tsq-run-form.txpower-grid {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.tsq-run-form.freqacc-grid {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
 }
 
 /* Progress */

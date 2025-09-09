@@ -37,14 +37,70 @@
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 14px;
-  padding: 14px;
+  padding: 0 14px;
 }
+
+/* reserve space for a scrollbar (prevents layout jump) */
+.tsq-builder,
+.tsq-builder-inner {
+  overflow-y: auto;
+  scrollbar-gutter: stable; /* keep a constant gutter */
+  scrollbar-width: thin; /* Firefox: thin scrollbar */
+}
+
+/* WebKit (Chrome/Edge/Safari) thin width */
+.tsq-builder::-webkit-scrollbar,
+.tsq-builder-inner::-webkit-scrollbar {
+  width: 10px; /* the "skeleton" width to reserve */
+  height: 10px;
+}
+
+/* make the track faint so you see a subtle skeleton groove */
+.tsq-builder::-webkit-scrollbar-track,
+.tsq-builder-inner::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* keep thumb nearly invisible, show on hover */
+.tsq-builder::-webkit-scrollbar-thumb,
+.tsq-builder-inner::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 8px;
+}
+
+.tsq-builder:hover::-webkit-scrollbar-thumb,
+.tsq-builder-inner:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* Firefox equivalents */
+.tsq-builder,
+.tsq-builder-inner {
+  /* default: invisible-ish thumb, faint track effect is limited in FF */
+  scrollbar-color: transparent rgba(0, 0, 0, 0.04);
+}
+.tsq-builder:hover,
+.tsq-builder-inner:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.35) rgba(0, 0, 0, 0.04);
+}
+
 .tsq-card-head {
+  position: sticky;
+  top: 0;
+  z-index: 1; /* above the list content */
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+
+  /* Visuals so it looks like a fixed toolbar */
+  background: var(--card-bg, #fff);
+  /* If your card has padding, match it here too */
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
+
 .tsq-card-title {
   font-weight: 600;
 }
@@ -135,9 +191,13 @@
 
 /* ===== Builder & Library ===== */
 .tsq-builder {
-  min-height: 240px;
+  height: 460px;
+  overflow-y: auto; /* scroll only vertically */
+  overflow-x: hidden;
+  position: relative; /* creates a stacking context for the sticky header */
   transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }
+
 .tsq-builder.is-drop-target {
   border-color: #6b77f7;
   box-shadow: 0 0 0 3px rgba(107, 119, 247, 0.18) inset,
