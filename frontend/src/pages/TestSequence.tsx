@@ -14,17 +14,24 @@ type TestItem = {
   runCondition?: "Run Always" | "Run If Pass" | "Run If Fail";
   frequencyText?: string; // e.g. "918.5 MHz" or "918500000"
   powerText?: string;     // e.g. "14"
+  // Tx Power limits:
   minValue?: number;
   maxValue?: number;
+  // Frequency Accuracy:
+  ppmLimit?: number;
   includeScreenshot?: boolean;
 };
 
 /* ---------------- Defaults ---------------- */
-const TEST_LIBRARY = ["Tx Power", "Current Consumption", "Frequency Accuracy", "Spurious Emission", "OBW"];
+const TEST_LIBRARY = [
+  "Tx Power",
+  
+  "Frequency Accuracy",
+  
+];
 
-// Avoid duplicating `name` to prevent TS warning
-const NEW_TX_POWER_TEST_DEFAULTS: Omit<TestItem, "id" | "type" | "name"> = {
-  runCondition: "Run Always",
+const BASE_DEFAULTS = {
+  runCondition: "Run Always" as const,
   frequencyText: "918.5 MHz",
   powerText: "14",
   includeScreenshot: false,
@@ -37,6 +44,7 @@ function parseFirstFreqHz(text: string | number | undefined): number {
   const m = s.match(/(\d+(\.\d+)?)/);
   if (!m) return 0;
   const val = parseFloat(m[1]);
+  // If user typed "918.5" assume MHz, else assume already in Hz
   return val < 1e6 ? Math.round(val * 1_000_000) : Math.round(val);
 }
 function parseFirstInt(text: string | number | undefined): number {
@@ -46,6 +54,8 @@ function parseFirstInt(text: string | number | undefined): number {
   const n = parseInt(first, 10);
   return Number.isFinite(n) ? n : 0;
 }
+const isFreqAccuracy = (t: TestItem | string) =>
+  /frequency\s*accuracy/i.test(typeof t === "string" ? t : t.type);
 
 /* ---------------- Component ---------------- */
 export default function TestSequence() {
@@ -69,13 +79,19 @@ export default function TestSequence() {
     freqHz: number;
     powerDbm: number;
     testName: string;
+    type: string;
     minValue?: number;
     maxValue?: number;
+    ppmLimit?: number;
     defaultMac?: string | null;
   } | null>(null);
 
   const totals = useMemo(
-    () => ({ LoRa: sequences.LoRa.length, LTE: sequences.LTE.length, BLE: sequences.BLE.length }),
+    () => ({
+      LoRa: sequences.LoRa.length,
+      LTE: sequences.LTE.length,
+      BLE: sequences.BLE.length,
+    }),
     [sequences]
   );
   const totalAll = totals.LoRa + totals.LTE + totals.BLE;
@@ -85,7 +101,10 @@ export default function TestSequence() {
     const id = nextId.current++;
     setSequences((prev) => {
       const copy = { ...prev };
-      copy[tab] = [...copy[tab], { id, type: name, name, ...NEW_TX_POWER_TEST_DEFAULTS}];
+      const defaults: Partial<TestItem> = isFreqAccuracy(name)
+        ? { ...BASE_DEFAULTS, ppmLimit: 20 } // default ±20 ppm
+        : { ...BASE_DEFAULTS, minValue: undefined, maxValue: undefined };
+      copy[tab] = [...copy[tab], { id, type: name, name, ...defaults }];
       // collapse previous tests, keep the newly added open
       copy[tab] = copy[tab].map((t, i, arr) => (i === arr.length - 1 ? t : { ...t, minimized: true }));
       return copy;
@@ -174,8 +193,10 @@ export default function TestSequence() {
       freqHz: freqHz || 918_500_000,
       powerDbm: Number.isFinite(powerDbm) ? powerDbm : 14,
       testName: t.name || t.type || "Test",
+      type: t.type,
       minValue: t.minValue,
       maxValue: t.maxValue,
+      ppmLimit: t.ppmLimit,
       defaultMac,
     });
     setRunOpen(true);
@@ -197,7 +218,7 @@ export default function TestSequence() {
         {(["LoRa", "LTE", "BLE"] as const).map((p) => (
           <button key={p} className={`tsq-tab ${tab === p ? "is-active" : ""}`} onClick={() => setTab(p)}>
             {p}
-            <span className={`tsq-badge`}>{sequences[p].length}</span>
+            <span className="tsq-badge">{sequences[p].length}</span>
           </button>
         ))}
       </div>
@@ -211,7 +232,7 @@ export default function TestSequence() {
         >
           <div className="tsq-card-head">
             <div>
-              <div className="tsq-card-title">{tab.toUpperCase()} Builder</div>
+              <div className="tsq-card-title">{tab} Builder</div>
               <div className="tsq-card-sub">Drag tests from the library or reorder existing tests</div>
             </div>
             <div className="tsq-actions">
@@ -222,134 +243,169 @@ export default function TestSequence() {
 
           {sequences[tab].length === 0 ? (
             <div className="tsq-dropzone">
-              No {tab.toUpperCase()} tests yet
+              No {tab} tests yet
               <br />
               Drag tests from the library to get started
             </div>
           ) : (
             <div className="tsq-tests">
-              {sequences[tab].map((t) => (
-                <article
-                  key={t.id}
-                  className={[
-                    "tsq-test",
-                    t.minimized ? "is-min" : "",
-                    draggingCardId === t.id ? "is-dragging" : "",
-                    dragOverCardId === t.id && dragOverEdge ? `is-over is-${dragOverEdge}` : "",
-                  ].join(" ")}
-                  draggable
-                  onDragStart={(e) => onCardDragStart(e, t.id)}
-                  onDragOver={(e) => onCardDragOver(e, t.id)}
-                  onDrop={(e) => onCardDrop(e, t.id)}
-                  onDragEnd={onCardDragEnd}
-                >
-                  <header className="tsq-test-head">
-                    <div className="tsq-test-title">
-                      <span className="tsq-test-drag-handle" title="Drag to reorder">
-                        <GripVertical size={16} />
-                      </span>
-                      <button
-                        className="tsq-title-toggle"
-                        onClick={() => toggleMinimize(t.id)}
-                        title={t.minimized ? "Expand" : "Minimize"}
-                      >
-                        <span className="tsq-title-text">
-                          {t.type} <span className="tsq-test-proto">· {tab}</span>
+              {sequences[tab].map((t) => {
+                const isFA = isFreqAccuracy(t);
+                return (
+                  <article
+                    key={t.id}
+                    className={[
+                      "tsq-test",
+                      t.minimized ? "is-min" : "",
+                      draggingCardId === t.id ? "is-dragging" : "",
+                      dragOverCardId === t.id && dragOverEdge ? `is-over is-${dragOverEdge}` : "",
+                    ].join(" ")}
+                    draggable
+                    onDragStart={(e) => onCardDragStart(e, t.id)}
+                    onDragOver={(e) => onCardDragOver(e, t.id)}
+                    onDrop={(e) => onCardDrop(e, t.id)}
+                    onDragEnd={onCardDragEnd}
+                  >
+                    <header className="tsq-test-head">
+                      <div className="tsq-test-title">
+                        <span className="tsq-test-drag-handle" title="Drag to reorder">
+                          <GripVertical size={16} />
                         </span>
-                        <ChevronDown size={16} className={`tsq-title-caret ${t.minimized ? "" : "is-open"}`} />
-                      </button>
-                    </div>
-
-                    <div className="tsq-test-actions">
-                      <button className="tsq-icon-btn ghost" title="Play locally" onClick={() => playSingle(t)}>
-                        <PlayCircle size={18} />
-                      </button>
-                      <button className="tsq-icon-btn ghost danger" title="Remove" onClick={() => removeTest(t.id)}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </header>
-
-                  {!t.minimized && (
-                    <div className="tsq-test-body">
-                      <div className="tsq-form-row">
-                        <label>Test Name</label>
-                        <input
-                          className="tsq-input"
-                          value={t.name}
-                          onChange={(e) => updateTest(t.id, { name: e.target.value })}
-                        />
+                        <button
+                          className="tsq-title-toggle"
+                          onClick={() => toggleMinimize(t.id)}
+                          title={t.minimized ? "Expand" : "Minimize"}
+                        >
+                          <span className="tsq-title-text">
+                            {t.type} <span className="tsq-test-proto"> &nbsp;· {tab}</span>
+                          </span>
+                          <ChevronDown size={16} className={`tsq-title-caret ${t.minimized ? "" : "is-open"}`} />
+                        </button>
                       </div>
 
-                      <div className="tsq-form-grid">
-                        <div className="tsq-form-row">
-                          <label>Run Condition</label>
-                          <select
-                            className="tsq-input"
-                            value={t.runCondition ?? "Run Always"}
-                            onChange={(e) => updateTest(t.id, { runCondition: e.target.value as TestItem["runCondition"] })}
-                          >
-                            <option>Run Always</option>
-                            <option>Run If Pass</option>
-                            <option>Run If Fail</option>
-                          </select>
-                        </div>
-
-                        <div className="tsq-form-row">
-                          <label>Frequency</label>
-                          <input
-                            className="tsq-input"
-                            value={t.frequencyText ?? ""}
-                            onChange={(e) => updateTest(t.id, { frequencyText: e.target.value })}
-                            placeholder="e.g., 918.5 MHz or 918500000"
-                          />
-                        </div>
+                      <div className="tsq-test-actions">
+                        <button className="tsq-icon-btn ghost" title="Play locally" onClick={() => playSingle(t)}>
+                          <PlayCircle size={18} />
+                        </button>
+                        <button className="tsq-icon-btn ghost danger" title="Remove" onClick={() => removeTest(t.id)}>
+                          <Trash2 size={16} />
+                        </button>
                       </div>
+                    </header>
 
-                      <div className="tsq-form-grid">
+                    {!t.minimized && (
+                      <div className="tsq-test-body">
                         <div className="tsq-form-row">
-                          <label>Power (dBm)</label>
+                          <label>Test Name</label>
                           <input
                             className="tsq-input"
-                            value={String(t.powerText ?? "")}
-                            onChange={(e) => updateTest(t.id, { powerText: e.target.value })}
-                            placeholder="e.g., 14"
+                            value={t.name}
+                            onChange={(e) => updateTest(t.id, { name: e.target.value })}
                           />
                         </div>
 
-                        <div className="tsq-form-row">
-                          <label>Min Value (dBm)</label>
-                          <input
-                            className="tsq-input"
-                            type="number"
-                            value={t.minValue ?? ""}
-                            onChange={(e) => updateTest(t.id, { minValue: e.target.value === "" ? undefined : Number(e.target.value) })}
-                          />
+                        <div className="tsq-form-grid">
+                          <div className="tsq-form-row">
+                            <label>Run Condition</label>
+                            <select
+                              className="tsq-input"
+                              value={t.runCondition ?? "Run Always"}
+                              onChange={(e) =>
+                                updateTest(t.id, {
+                                  runCondition: e.target.value as TestItem["runCondition"],
+                                })
+                              }
+                            >
+                              <option>Run Always</option>
+                              <option>Run If Pass</option>
+                              <option>Run If Fail</option>
+                            </select>
+                          </div>
+
+                          <div className="tsq-form-row">
+                            <label>Frequency</label>
+                            <input
+                              className="tsq-input"
+                              value={t.frequencyText ?? ""}
+                              onChange={(e) => updateTest(t.id, { frequencyText: e.target.value })}
+                              placeholder="e.g., 918.5 MHz or 918500000"
+                            />
+                          </div>
                         </div>
 
-                        <div className="tsq-form-row">
-                          <label>Max Value (dBm)</label>
-                          <input
-                            className="tsq-input"
-                            type="number"
-                            value={t.maxValue ?? ""}
-                            onChange={(e) => updateTest(t.id, { maxValue: e.target.value === "" ? undefined : Number(e.target.value) })}
-                          />
+                        <div className="tsq-form-grid">
+                          <div className="tsq-form-row">
+                            <label>Power (dBm)</label>
+                            <input
+                              className="tsq-input"
+                              value={String(t.powerText ?? "")}
+                              onChange={(e) => updateTest(t.id, { powerText: e.target.value })}
+                              placeholder="e.g., 14"
+                            />
+                          </div>
+
+                          {/* Tx Power limits OR Freq Accuracy ppm limit */}
+                          {!isFA ? (
+                            <>
+                              <div className="tsq-form-row">
+                                <label>Min Value (dBm)</label>
+                                <input
+                                  className="tsq-input"
+                                  type="number"
+                                  value={t.minValue ?? ""}
+                                  onChange={(e) =>
+                                    updateTest(t.id, {
+                                      minValue: e.target.value === "" ? undefined : Number(e.target.value),
+                                    })
+                                  }
+                                />
+                              </div>
+
+                              <div className="tsq-form-row">
+                                <label>Max Value (dBm)</label>
+                                <input
+                                  className="tsq-input"
+                                  type="number"
+                                  value={t.maxValue ?? ""}
+                                  onChange={(e) =>
+                                    updateTest(t.id, {
+                                      maxValue: e.target.value === "" ? undefined : Number(e.target.value),
+                                    })
+                                  }
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <div className="tsq-form-row">
+                              <label>PPM Limit (±)</label>
+                              <input
+                                className="tsq-input"
+                                type="number"
+                                value={t.ppmLimit ?? 20}
+                                onChange={(e) =>
+                                  updateTest(t.id, {
+                                    ppmLimit: e.target.value === "" ? undefined : Number(e.target.value),
+                                  })
+                                }
+                                placeholder="e.g., 20 (ppm)"
+                              />
+                            </div>
+                          )}
                         </div>
+
+                        <label className="tsq-check">
+                          <input
+                            type="checkbox"
+                            checked={!!t.includeScreenshot}
+                            onChange={(e) => updateTest(t.id, { includeScreenshot: e.target.checked })}
+                          />{" "}
+                          Include Spectrum Screenshot
+                        </label>
                       </div>
-
-                      <label className="tsq-check">
-                        <input
-                          type="checkbox"
-                          checked={!!t.includeScreenshot}
-                          onChange={(e) => updateTest(t.id, { includeScreenshot: e.target.checked })}
-                        />{" "}
-                        Include Spectrum Screenshot
-                      </label>
-                    </div>
-                  )}
-                </article>
-              ))}
+                    )}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
@@ -357,12 +413,15 @@ export default function TestSequence() {
         {/* Library */}
         <aside className="tsq-card tsq-library">
           <div className="tsq-card-head">
-            <div className="tsq-card-title">Available Tests</div>
-            <button className="tsq-btn ghost">
+            <div>
+              <div className="tsq-card-title">Available Tests</div>
+              <div className="tsq-card-sub">Drag tests to the {tab} builder</div>
+
+            </div>
+            {/* <button className="tsq-btn ghost">
               <Plus className="mr-1" size={16} /> Add
-            </button>
+            </button> */}
           </div>
-          <div className="tsq-card-sub">Drag tests to the {tab.toUpperCase()} builder</div>
 
           <div className="tsq-library-list">
             {TEST_LIBRARY.map((name) => (
@@ -400,12 +459,17 @@ export default function TestSequence() {
         <RunModal
           open={runOpen}
           onClose={() => setRunOpen(false)}
+          // mode by test type
+          mode={isFreqAccuracy(runDefaults.type) ? "freqAccuracy" : "txPower"}
           testName={runDefaults.testName}
           defaultFreqHz={runDefaults.freqHz}
           defaultPowerDbm={runDefaults.powerDbm}
           defaultMac={runDefaults.defaultMac || undefined}
+          // tx-power limits
           minValue={runDefaults.minValue}
           maxValue={runDefaults.maxValue}
+          // freq-accuracy default tolerance
+          defaultPpmLimit={runDefaults.ppmLimit ?? 20}
         />
       )}
     </div>

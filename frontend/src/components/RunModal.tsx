@@ -3,6 +3,10 @@ import { CheckCircle, Circle, Loader2, XCircle } from "lucide-react";
 import { openTestStream } from "@/api/tests";
 import "./css/RunModal.css";
 
+/** --------- Types & Labels --------- */
+
+type TestMode = "txPower" | "freqAccuracy";
+
 type StepKey =
   | "connectAnalyzer"
   | "configureAnalyzer"
@@ -39,36 +43,81 @@ const initSteps = (): Record<StepKey, StepStatus> =>
     {} as Record<StepKey, StepStatus>
   );
 
+/** --------- Event payloads from SSE (union, permissive) --------- */
+type StepEvt = {
+  type: "step";
+  key: StepKey;
+  status: "start" | "done" | "error";
+  message?: string;
+  measuredDbm?: number;
+  measuredHz?: number;
+  errorHz?: number;
+  errorPpm?: number;
+};
+type ResultEvt = {
+  type: "result";
+  measuredDbm?: number;
+  measuredHz?: number;
+  errorHz?: number;
+  errorPpm?: number;
+  pass_?: boolean | null;
+};
+type LogEvt = { type: "log"; message: string };
+type StartEvt = { type: "start"; test: string; params: any };
+type ErrEvt = { type: "error"; error: string };
+type AnyEvt = StepEvt | ResultEvt | LogEvt | StartEvt | ErrEvt | Record<string, any>;
+
+/** --------- Props --------- */
 type Props = {
   open: boolean;
   onClose: () => void;
+
+  mode?: TestMode; // default = "txPower"
   testName?: string;
+
+  // Shared defaults
   defaultFreqHz?: number;
   defaultPowerDbm?: number;
   defaultMac?: string;
-  minValue?: number;
-  maxValue?: number;
+
+  // Tx-Power limits (optional)
+  minValue?: number | null;
+  maxValue?: number | null;
+
+  // Freq-Accuracy tolerance (optional)
+  defaultPpmLimit?: number;
 };
 
 export default function RunModal({
   open,
   onClose,
-  testName = "Tx Power",
+  mode = "txPower",
+  testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
   defaultFreqHz = 918_500_000,
   defaultPowerDbm = 14,
   defaultMac,
-  minValue,
-  maxValue,
+  minValue = null,
+  maxValue = null,
+  defaultPpmLimit = 20,
 }: Props) {
+  // inputs
   const [mac, setMac] = useState(defaultMac || "");
   const [freqHz, setFreqHz] = useState(defaultFreqHz);
   const [powerDbm, setPowerDbm] = useState(defaultPowerDbm);
+  const [ppmLimit, setPpmLimit] = useState<number>(defaultPpmLimit);
 
+  // run state
   const [running, setRunning] = useState(false);
-  const [finished, setFinished] = useState<null | { measuredDbm?: number; pass?: boolean }>(null);
   const [steps, setSteps] = useState<Record<StepKey, StepStatus>>(initSteps());
   const [logs, setLogs] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
+
+  // results: support both tests
+  const [resTx, setResTx] = useState<null | { measuredDbm?: number; pass?: boolean }>(null);
+  const [resFa, setResFa] = useState<
+    | null
+    | { measuredHz?: number; errorHz?: number; errorPpm?: number; pass?: boolean }
+  >(null);
 
   // auto-scroll log
   const logRef = useRef<HTMLPreElement | null>(null);
@@ -100,7 +149,8 @@ export default function RunModal({
 
   const reset = () => {
     setRunning(false);
-    setFinished(null);
+    setResTx(null);
+    setResFa(null);
     setSteps(initSteps());
     setLogs([]);
   };
@@ -141,75 +191,129 @@ export default function RunModal({
 
     reset();
     setRunning(true);
-    pushLog(`SSE /tests/tx-power/stream (freq=${freqHz}, power=${powerDbm}, mac=${macOk})`);
 
-    const es = openTestStream(
-      "/tests/tx-power/stream",
-      {
-        mac: macOk,
-        freq_hz: freqHz,
-        power_dbm: powerDbm,
-        min_value: minValue ?? null,
-        max_value: maxValue ?? null,
+    // Endpoint selection by mode
+    const path = mode === "freqAccuracy" ? "/tests/freq-accuracy/stream" : "/tests/tx-power/stream";
+
+    // Log header
+    if (mode === "freqAccuracy") {
+      pushLog(
+        `SSE ${path} (freq=${freqHz}, power=${powerDbm}, mac=${macOk}, ppm_limit=${ppmLimit})`
+      );
+    } else {
+      pushLog(
+        `SSE ${path} (freq=${freqHz}, power=${powerDbm}, mac=${macOk}${
+          minValue != null ? `, min=${minValue}` : ""
+        }${maxValue != null ? `, max=${maxValue}` : ""})`
+      );
+    }
+
+    // Params per mode
+    const body =
+      mode === "freqAccuracy"
+        ? {
+            mac: macOk,
+            freq_hz: freqHz,
+            power_dbm: powerDbm,
+            ppm_limit: ppmLimit ?? null,
+          }
+        : {
+            mac: macOk,
+            freq_hz: freqHz,
+            power_dbm: powerDbm,
+            min_value: minValue ?? null,
+            max_value: maxValue ?? null,
+          };
+
+    const es = openTestStream(path, body, {
+      onStart: () => pushLog("Run started"),
+      onStep: (e: AnyEvt) => {
+        const key = (e as any).key as StepKey | undefined;
+        if (key && ORDER.includes(key)) {
+          const rawStatus = (e as any).status;
+          const status: StepStatus =
+            rawStatus === "error" ? "error" : rawStatus === "done" ? "done" : "doing";
+          setStepSeq(key, status);
+        }
+        if ((e as any).message) pushLog((e as any).message);
+
+        // progressive updates
+        if (typeof (e as any).measuredDbm === "number") {
+          setResTx((f) => ({ ...(f || {}), measuredDbm: (e as any).measuredDbm }));
+        }
+        if (typeof (e as any).measuredHz === "number") {
+          setResFa((f) => ({ ...(f || {}), measuredHz: (e as any).measuredHz }));
+        }
+        if (
+          typeof (e as any).errorHz === "number" ||
+          typeof (e as any).errorPpm === "number"
+        ) {
+          setResFa((f) => ({
+            ...(f || {}),
+            errorHz: (e as any).errorHz,
+            errorPpm: (e as any).errorPpm,
+          }));
+        }
       },
-      {
-        onStart: () => pushLog("Run started"),
-        onStep: (e) => {
-          const key = (e.key || "") as StepKey;
-          if (ORDER.includes(key)) {
-            const status: StepStatus =
-              e.status === "error" ? "error" : e.status === "done" ? "done" : "doing";
-            setStepSeq(key, status);
-          }
-          if (e.message) pushLog(e.message);
-          if (typeof e.measuredDbm === "number") {
-            setFinished((f) => ({ ...(f || {}), measuredDbm: e.measuredDbm }));
-          }
-        },
-        onLog: (e) => pushLog(e.message),
-        onResult: (e) => {
-          setSteps((prev) => {
-            const next = { ...prev };
-            ORDER.forEach((k) => {
-              if (next[k] === "doing") next[k] = "done";
-            });
-            return next;
+      onLog: (e: AnyEvt) => pushLog((e as any).message),
+      onResult: (e: AnyEvt) => {
+        setSteps((prev) => {
+          const next = { ...prev };
+          ORDER.forEach((k) => {
+            if (next[k] === "doing") next[k] = "done";
           });
-          setFinished({ measuredDbm: e.measuredDbm, pass: e.pass_ ?? undefined });
+          return next;
+        });
+
+        if (mode === "freqAccuracy") {
+          setResFa({
+            measuredHz: (e as any).measuredHz,
+            errorHz: (e as any).errorHz,
+            errorPpm: (e as any).errorPpm,
+            pass: (e as any).pass_ ?? undefined,
+          });
+          const ppm = (e as any).errorPpm;
+          pushLog(
+            `Measurement complete. f=${(e as any).measuredHz} Hz, err=${(e as any).errorHz} Hz${
+              typeof ppm === "number" ? ` (${ppm.toFixed(3)} ppm)` : ""
+            }`
+          );
+        } else {
+          setResTx({ measuredDbm: (e as any).measuredDbm, pass: (e as any).pass_ ?? undefined });
           pushLog("Measurement complete.");
-        },
-        onError: (e) => {
-          setSteps((prev) => {
-            const next = { ...prev };
-            let marked = false;
-            for (const k of ORDER) {
-              if (!marked && next[k] === "doing") {
-                next[k] = "error";
-                marked = true;
-              }
+        }
+      },
+      onError: (e: AnyEvt) => {
+        setSteps((prev) => {
+          const next = { ...prev };
+          let marked = false;
+          for (const k of ORDER) {
+            if (!marked && next[k] === "doing") {
+              next[k] = "error";
+              marked = true;
             }
-            return next;
+          }
+          return next;
+        });
+        pushLog(`Error: ${(e as any).error}`);
+        es.close();
+        esRef.current = null;
+        setRunning(false);
+      },
+      onDone: () => {
+        setSteps((prev) => {
+          const next = { ...prev };
+          ORDER.forEach((k) => {
+            if (next[k] === "doing") next[k] = "done";
           });
-          pushLog(`Error: ${e.error}`);
-          es.close();
-          esRef.current = null;
-          setRunning(false);
-        },
-        onDone: () => {
-          setSteps((prev) => {
-            const next = { ...prev };
-            ORDER.forEach((k) => {
-              if (next[k] === "doing") next[k] = "done";
-            });
-            next.close = "done";
-            return next;
-          });
-          setRunning(false);
-          es.close();
-          esRef.current = null;
-        },
-      }
-    );
+          next.close = "done";
+          return next;
+        });
+        setRunning(false);
+        es.close();
+        esRef.current = null;
+      },
+    });
 
     // Guard: if the server closes without error/done
     es.onerror = () => {
@@ -241,7 +345,8 @@ export default function RunModal({
           <div className="tsq-modal-title">Run {testName} (Local)</div>
         </div>
 
-        <div className="tsq-run-form">
+        <div className={`tsq-run-form ${
+            mode === "txPower" ? "txpower-grid" : "freqacc-grid"}`}>
           <label className="tsq-field">
             <span>MAC</span>
             <input
@@ -272,6 +377,44 @@ export default function RunModal({
               disabled={running}
             />
           </label>
+
+          {mode === "freqAccuracy" ? (
+            <label className="tsq-field">
+              <span>PPM Limit (±)</span>
+              <input
+                className="tsq-input"
+                type="number"
+                value={ppmLimit}
+                onChange={(e) => setPpmLimit(Number(e.target.value))}
+                disabled={running}
+              />
+            </label>
+          ) : (
+            <>
+              <label className="tsq-field">
+                <span>Min [dBm] (optional)</span>
+                <input
+                  className="tsq-input"
+                  type="number"
+                  value={minValue ?? ""}
+                  onChange={() => {}}
+                  placeholder="(use test config)"
+                  disabled
+                />
+              </label>
+              <label className="tsq-field">
+                <span>Max [dBm] (optional)</span>
+                <input
+                  className="tsq-input"
+                  type="number"
+                  value={maxValue ?? ""}
+                  onChange={() => {}}
+                  placeholder="(use test config)"
+                  disabled
+                />
+              </label>
+            </>
+          )}
         </div>
 
         <div className="tsq-run-meta">
@@ -287,6 +430,12 @@ export default function RunModal({
             <div className="tsq-meta-k">Power</div>
             <div className="tsq-meta-v">{powerDbm} dBm</div>
           </div>
+          {mode === "freqAccuracy" && (
+            <div className="tsq-meta-item">
+              <div className="tsq-meta-k">PPM Limit</div>
+              <div className="tsq-meta-v">±{ppmLimit}</div>
+            </div>
+          )}
         </div>
 
         <ol className="tsq-steps">
@@ -309,12 +458,34 @@ export default function RunModal({
           </div>
         )}
 
-        {finished && (
+        {/* Results */}
+        {mode === "freqAccuracy" && resFa && (
           <div className="tsq-result">
-            Measured: <strong>{finished.measuredDbm?.toFixed(2)} dBm</strong>
-            {typeof finished.pass === "boolean" && (
-              <span className={`tsq-chip ${finished.pass ? "pass" : "fail"}`}>
-                {finished.pass ? "PASS" : "FAIL"}
+            f: <strong>{resFa.measuredHz?.toLocaleString()} Hz</strong>{" "}
+            {typeof resFa.errorHz === "number" && (
+              <>
+                &nbsp;| Δf: <strong>{resFa.errorHz} Hz</strong>
+              </>
+            )}
+            {typeof resFa.errorPpm === "number" && (
+              <>
+                &nbsp;(<strong>{resFa.errorPpm.toFixed(3)} ppm</strong>)
+              </>
+            )}
+            {typeof resFa.pass === "boolean" && (
+              <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>
+                {resFa.pass ? "PASS" : "FAIL"}
+              </span>
+            )}
+          </div>
+        )}
+
+        {mode === "txPower" && resTx && (
+          <div className="tsq-result">
+            Measured: <strong>{resTx.measuredDbm?.toFixed(2)} dBm</strong>
+            {typeof resTx.pass === "boolean" && (
+              <span className={`tsq-chip ${resTx.pass ? "pass" : "fail"}`}>
+                {resTx.pass ? "PASS" : "FAIL"}
               </span>
             )}
           </div>
