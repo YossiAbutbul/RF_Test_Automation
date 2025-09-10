@@ -95,7 +95,7 @@ export default function RunModal({
   testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
   defaultFreqHz = 918_500_000,
   defaultPowerDbm = 14,
-  defaultMac,
+  defaultMac = "80E1271FD8DD",
   minValue = null,
   maxValue = null,
   defaultPpmLimit = 20,
@@ -174,7 +174,7 @@ export default function RunModal({
     if (existing.length >= 6) return existing;
     const last = localStorage.getItem("rfapp.lastMac") || "";
     const typed =
-      window.prompt("Enter DUT MAC (hex, e.g. D5A9F012CC39):", existing || last) || "";
+      window.prompt("Enter DUT MAC (hex, e.g. 80E1271FD8DD):", existing || last) || "";
     const clean = typed.trim();
     if (clean.length >= 6) {
       setMac(clean);

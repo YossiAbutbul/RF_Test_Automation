@@ -52,10 +52,43 @@ def lora_cw(device: BLE_Device, spectrum: SpectrumAnalyzer, frequency, power, re
         spectrum.disconnect()
 
 def cat_m_modem_om(device: BLE_Device,):
-    commands = cmd.HWTP_DBG_CATM_MODEM_OM
-    payload = struct.HWTP_CatMModemOm_t(
-        timeout=10)
-    device.hwtp_set(commands, payload)
+    commands = cmd.HWTP_AT_MODEM_ON
+    # payload = struct.HWTP_CATM_mode_t
+    s_time = time.time()
+    try:
+        device.hwtp_get(commands, timeout=10000)
+    except Exception as e:
+        print(f"Exception occurred: {e}")
+    e_time = time.time()
+
+def cat_m_cw_on(device: BLE_Device, earfcn, power):    
+    commands = cmd.HWTP_MODEM_TEST_RF_CW
+    payload = struct.HWTP_tstrf_cw_s(
+        tstrf_cmd=enums.hwtp_at_tstrf_cmd_e.HWTP_START_TX_TEST,
+        earfcn=earfcn,
+        time=150000,
+        tx_power=power,
+        offset_to_the_central=0
+    )
+    device.hwtp_set(commands,payload)
+
+def cat_m_abort_test(device: BLE_Device):
+    commands = cmd.HWTP_MODEM_TEST_RF_CW
+    payload = struct.HWTP_tstrf_cw_s(
+        tstrf_cmd=enums.hwtp_at_tstrf_cmd_e.HWTP_ABORT_TEST,
+        earfcn=0,
+        time=150000,
+        tx_power=0,
+        offset_to_the_central=0
+        )
+    device.hwtp_set(commands,payload)
+
+def cat_m_modem_off(device: BLE_Device):
+    commands = cmd.HWTP_AT_MODEM_OFF
+    try:
+        device.hwtp_get(commands)
+    except Exception as e:
+        print(f"Exception occurred: {e}")
 
 
 def main():
@@ -63,7 +96,7 @@ def main():
     # mac_address = parse_mac_to_hex(mac_input.strip())
     #
     # device = BLE_Device(mac_address)
-    device = BLE_Device(0xD5A9F012CC39)
+    device = BLE_Device(0x80E1271FD8DD)
     device.Connect()
 
     # analyzer = SpectrumAnalyzer(ip_address="172.16.10.1")
@@ -72,12 +105,19 @@ def main():
     # analyzer.set_span(5, "MHZ")
     # analyzer.set_ref_level_offset(20)
 
-    time.sleep(2)
+    # time.sleep(2)
     # lora_cw(device=device, spectrum=analyzer, frequency=918000000, power=0, ref_offset=20)
     cat_m_modem_om(device=device)
+    cat_m_cw_on(device, earfcn=18900, power=2300)
+    
+    time.sleep(2)
+    cat_m_abort_test(device=device)
+    cat_m_modem_off(device=device)
+    device.Disconnect()
 
 # python -m SpectrumTestApp.main_test
 
-# D5A9F012CC39
+# 80E1271FD8DD
+# 80E1271FD8DD
 if __name__ == '__main__':
     main()

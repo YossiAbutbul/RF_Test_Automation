@@ -47,7 +47,7 @@ def _mac_to_int(mac: str | int) -> int:
     """
     Accepts:
       - int (already good)
-      - hex string with or without separators: 'D5A9F012CC39', 'D5:A9:F0:12:CC:39', '0xD5A9F012CC39'
+      - hex string with or without separators: '80E1271FD8DD', 'D5:A9:F0:12:CC:39', '0x80E1271FD8DD'
     Returns integer value suitable for BLE_Device(MacAddress).
     """
     if isinstance(mac, int):
