@@ -98,8 +98,8 @@ async def run_tx_power(
 
         # ----- DUT & measure -----
         with managed_ble(mac) as dut:
-            await _dut_call(dut, "cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
-            await asyncio.sleep(float(settle_cfg.get("after_cw_on_s", 0.6)))
+            await _dut_call(dut, "lora_cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
+            await asyncio.sleep(float(settle_cfg.get("after_lora_cw_on_s", 0.6)))
 
             await _spec_call(spec.peak_search, marker); await asyncio.sleep(default_delay)
             pow_str = await _spec_call(spec.get_marker_power, marker)
@@ -107,7 +107,7 @@ async def run_tx_power(
 
             # best-effort CW off
             try:
-                await _dut_call(dut, "cw_off")
+                await _dut_call(dut, "lora_cw_off")
             except Exception:
                 pass
 
@@ -178,8 +178,8 @@ async def run_tx_power_stream(
             yield step("connectDut", "done")
 
             yield step("cwOn", "start", message=f"CW on @ {freq_hz} Hz, {power_dbm} dBm")
-            await _dut_call(dut, "cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
-            await asyncio.sleep(float(settle_cfg.get("after_cw_on_s", 0.6)))
+            await _dut_call(dut, "lora_cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
+            await asyncio.sleep(float(settle_cfg.get("after_lora_cw_on_s", 0.6)))
             yield step("cwOn", "done")
 
             # Measure
@@ -200,7 +200,7 @@ async def run_tx_power_stream(
             # CW OFF
             yield _evt("step", key="cwOff", status="start", message="Turning off CW.")
             try:
-                await _dut_call(dut, "cw_off")
+                await _dut_call(dut, "lora_cw_off")
                 yield _evt("step", key="cwOff", status="done")
             except Exception as e:
                 yield _evt("step", key="cwOff", status="error", message=str(e))
@@ -268,8 +268,8 @@ async def run_freq_accuracy(
 
         with managed_ble(mac) as dut:
             # CW ON
-            await _dut_call(dut, "cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
-            await asyncio.sleep(float(base.get("settle_after_cw_on_s", 0.30)))
+            await _dut_call(dut, "lora_cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
+            await asyncio.sleep(float(base.get("settle_after_lora_cw_on_s", 0.30)))
 
             # Zooms
             for z in zooms:
@@ -288,7 +288,7 @@ async def run_freq_accuracy(
 
             # CW OFF after full cycle
             try:
-                await _dut_call(dut, "cw_off")
+                await _dut_call(dut, "lora_cw_off")
             except Exception:
                 pass
 
@@ -346,8 +346,8 @@ async def run_freq_accuracy_stream(
             yield step("connectDut", "done")
 
             yield step("cwOn", "start", message=f"CW on @ {freq_hz} Hz, {power_dbm} dBm")
-            await _dut_call(dut, "cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
-            await asyncio.sleep(float(base.get("settle_after_cw_on_s", 0.30)))
+            await _dut_call(dut, "lora_cw_on", freq_hz=freq_hz, power_dbm=power_dbm)
+            await asyncio.sleep(float(base.get("settle_after_lora_cw_on_s", 0.30)))
             yield step("cwOn", "done")
 
             # Zooms (log each profile)
@@ -381,7 +381,7 @@ async def run_freq_accuracy_stream(
             # CW OFF only after the full cycle
             yield _evt("step", key="cwOff", status="start", message="Turning off CW.")
             try:
-                await _dut_call(dut, "cw_off")
+                await _dut_call(dut, "lora_cw_off")
                 yield _evt("step", key="cwOff", status="done")
             except Exception as e:
                 yield _evt("step", key="cwOff", status="error", message=str(e))

@@ -64,7 +64,7 @@ def _mac_to_int(mac: str | int) -> int:
 class DUTBLE:
     """
     Flow:
-      connect() → cw_on(freq,power) → (measure) → cw_off() → disconnect()
+      connect() → lora_cw_on(freq,power) → (measure) → cw_off() → disconnect()
     """
     def __init__(self, mac: str | int):
         _ensure_ble_runtime_loaded()
@@ -78,7 +78,7 @@ class DUTBLE:
             self.device.Connect()
             self._connected = True
 
-    def cw_on(self, freq_hz: int, power_dbm: int) -> None:
+    def lora_cw_on(self, freq_hz: int, power_dbm: int) -> None:
         if not self._connected:
             self.connect()
         payload = struct.HWTP_LoraTestCw_t(  # type: ignore
@@ -91,7 +91,7 @@ class DUTBLE:
         self.device.hwtp_set(cmd.HWTP_DBG_LORA_TEST_CW, payload)  # type: ignore
         time.sleep(0.2)
 
-    def cw_off(self) -> None:
+    def lora_cw_off(self) -> None:
         if not self._connected:
             return
         try:

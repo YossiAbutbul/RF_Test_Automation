@@ -48,13 +48,13 @@ def load_config(path: Optional[str | os.PathLike[str]] = None) -> Dict[str, Any]
                         "ref_offset_db": 20.5,
                         "use_peak_detector": True,
                     },
-                    "settle": {"after_center_s": 0.0, "after_cw_on_s": 0.6},
+                    "settle": {"after_center_s": 0.0, "after_lora_cw_on_s": 0.6},
                 },
                 "frequency_accuracy": {
                     "base": {
                         "use_peak_detector": True,
                         "settle_after_center_s": 0.10,
-                        "settle_after_cw_on_s": 0.30,
+                        "settle_after_lora_cw_on_s": 0.30,
                     },
                     "zooms": [
                         {"span_hz": 2_000_000, "rbw_hz": 1_000, "vbw_hz": 3_000, "delay_s": 0.18},

@@ -191,11 +191,12 @@
 
 /* ===== Builder & Library ===== */
 .tsq-builder {
-  height: 460px;
+  height: 690px;
   overflow-y: auto; /* scroll only vertically */
   overflow-x: hidden;
   position: relative; /* creates a stacking context for the sticky header */
   transition: box-shadow 0.18s ease, border-color 0.18s ease;
+  padding-bottom: 12px;
 }
 
 .tsq-builder.is-drop-target {
@@ -208,8 +209,8 @@
   margin-top: 12px;
   border: 1px dashed #d1d5db;
   border-radius: 12px;
-  background: linear-gradient(0deg, #fafafa, #ffffff);
-  min-height: 220px;
+  background: linear-gradient(0deg, #ffffff, #fafafa);
+  min-height: 590px;
   display: grid;
   place-items: center;
   text-align: center;

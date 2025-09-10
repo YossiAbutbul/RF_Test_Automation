@@ -51,6 +51,12 @@ def lora_cw(device: BLE_Device, spectrum: SpectrumAnalyzer, frequency, power, re
         device.Disconnect()
         spectrum.disconnect()
 
+def cat_m_modem_om(device: BLE_Device,):
+    commands = cmd.HWTP_DBG_CATM_MODEM_OM
+    payload = struct.HWTP_CatMModemOm_t(
+        timeout=10)
+    device.hwtp_set(commands, payload)
+
 
 def main():
     # mac_input = input("Please enter MAC Address:\n")
@@ -60,14 +66,15 @@ def main():
     device = BLE_Device(0xD5A9F012CC39)
     device.Connect()
 
-    analyzer = SpectrumAnalyzer(ip_address="172.16.10.1")
+    # analyzer = SpectrumAnalyzer(ip_address="172.16.10.1")
 
-    analyzer.connect()
-    analyzer.set_span(5, "MHZ")
+    # analyzer.connect()
+    # analyzer.set_span(5, "MHZ")
     # analyzer.set_ref_level_offset(20)
 
     time.sleep(2)
-    lora_cw(device=device, spectrum=analyzer, frequency=918000000, power=0, ref_offset=20)
+    # lora_cw(device=device, spectrum=analyzer, frequency=918000000, power=0, ref_offset=20)
+    cat_m_modem_om(device=device)
 
 # python -m SpectrumTestApp.main_test
 
