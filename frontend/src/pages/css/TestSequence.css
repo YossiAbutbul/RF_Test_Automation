@@ -453,3 +453,116 @@
   margin: 8px 0;
   gap: 5px;
 }
+
+/* ===== Desktop sizing system ===== */
+:root {
+  /* Fluid type scale for desktop-only */
+  --tsq-fs-sm: clamp(12px, 0.85vw, 13px);
+  --tsq-fs-md: clamp(13px, 0.95vw, 15px);
+  --tsq-fs-lg: clamp(16px, 1.2vw, 20px);
+  --tsq-pad-sm: clamp(6px, 0.6vw, 10px);
+  --tsq-pad-md: clamp(8px, 0.8vw, 14px);
+  --tsq-radius: 12px;
+}
+
+/* Replace hard px font-sizes with tokens */
+.tsq-title {
+  font-size: var(--tsq-fs-lg);
+} /* was 20px */
+.tsq-subtitle,
+.tsq-total {
+  font-size: var(--tsq-fs-sm);
+} /* was 13px */
+
+.tsq-card {
+  border-radius: calc(var(--tsq-radius) + 2px);
+  padding: 0 var(--tsq-pad-md);
+}
+.tsq-btn {
+  padding: var(--tsq-pad-sm) var(--tsq-pad-md);
+  font-size: var(--tsq-fs-sm);
+}
+
+/* ===== Responsive grid improvements ===== */
+.tsq-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px; /* default */
+  gap: 16px;
+}
+
+/* Small desktop/narrow window (<= 1200): stack */
+@media (max-width: 1200px) {
+  .tsq-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Large desktop (>= 1440): widen the right pane a bit */
+@media (min-width: 1440px) {
+  .tsq-grid {
+    grid-template-columns: 1fr 420px;
+  }
+}
+
+/* Ultrawide (>= 1920): give the builder breathing room & a wider library */
+@media (min-width: 1920px) {
+  .tsq-grid {
+    grid-template-columns: 1.2fr 460px;
+  }
+}
+
+/* ===== Make heights use the viewport, not fixed px ===== */
+/* Reserve vertical space based on the viewport minus your app header/footer.
+   Adjust the 180px constant to match your actual header/toolbars height. */
+.tsq-builder {
+  height: calc(100vh - 220px); /* was 690px */
+  min-height: 480px; /* safety on tiny windows */
+  max-height: calc(100vh - 220px); /* keep some bottom margin */
+}
+
+/* The dropzone should follow the builder height, not be fixed */
+.tsq-dropzone {
+  min-height: max(40vh, 360px); /* was 590px */
+}
+
+/* Library panel scales too */
+.tsq-library {
+  max-height: calc(100vh - 220px); /* was calc(100vh - 210px) */
+}
+
+/* Forms: add an intermediate & large layout */
+.tsq-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+  .tsq-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .tsq-form-grid {
+    grid-template-columns: 1fr;
+  } /* you already had this */
+}
+@media (min-width: 1600px) {
+  .tsq-form-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Tests list density: relax on big screens, tighten on small */
+@media (max-width: 1200px) {
+  .tsq-tests {
+    gap: 8px;
+  }
+}
+@media (min-width: 1600px) {
+  .tsq-tests {
+    gap: 12px;
+  }
+}
+
+/* Sticky header: ensure it stays visible under app header */
+.tsq-card-head {
+  top: 0px;
+} /* change to your app’s actual top offset if needed */
