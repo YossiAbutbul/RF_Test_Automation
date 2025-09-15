@@ -4,24 +4,19 @@ on:
   push:
     branches: ["**"]
     tags: ["**"]
-  delete:
   create:
-  workflow_dispatch: {}   # allow manual runs from Actions tab
-
-concurrency:
-  group: mirror-to-azure-${{ github.ref }}
-  cancel-in-progress: false
+  workflow_dispatch: {}   # allow manual trigger
 
 jobs:
   mirror:
-    if: github.event.repository.fork == false   # don't run on forks
+    if: github.event.repository.fork == false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: false   # set true if you use Git LFS
+          lfs: false   # set to true if you use Git LFS
 
       - name: Configure Git identity
         run: |
@@ -36,34 +31,22 @@ jobs:
           AZURE_DEVOPS_URL: ${{ secrets.AZURE_DEVOPS_URL }}
         run: |
           set -euo pipefail
-          if [ -z "${AZURE_DEVOPS_USERNAME}" ] || [ -z "${AZURE_DEVOPS_PAT}" ] || [ -z "${AZURE_DEVOPS_URL}" ]; then
-            echo "One or more Azure secrets are missing" >&2
-            exit 1
-          fi
-          URL_WITH_CREDS="$(echo "$AZURE_DEVOPS_URL" | sed "s#https://#https://${AZURE_DEVOPS_USERNAME}:${AZURE_DEVOPS_PAT}@#")"
+          URL_WITH_CREDS="$(echo "$AZURE_DEVOPS_URL" \
+            | sed "s#https://#https://${AZURE_DEVOPS_USERNAME}:${AZURE_DEVOPS_PAT}@#")"
           echo "url=$URL_WITH_CREDS" >> "$GITHUB_OUTPUT"
 
       - name: Add/Update 'azure' remote
         run: |
-          set -euo pipefail
           if git remote get-url azure >/dev/null 2>&1; then
             git remote set-url azure "${{ steps.build.outputs.url }}"
           else
             git remote add azure "${{ steps.build.outputs.url }}"
           fi
-          # Show remotes but redact credentials in logs
+          # show remotes but redact credentials
           git remote -v | sed 's#https://.*@#https://***:***@#'
 
-      - name: Mirror all refs to Azure (with retry)
+      - name: Push branches and tags (safe copy)
         run: |
-          set -euo pipefail
           git fetch --all --prune
-          for i in 1 2 3; do
-            if git push --mirror azure; then
-              exit 0
-            fi
-            echo "Push failed (attempt $i). Retrying in 5s..."
-            sleep 5
-          done
-          echo "Push failed after 3 attempts." >&2
-          exit 1
+          git push --all azure
+          git push --tags azure
