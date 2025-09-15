@@ -12,8 +12,8 @@ tests:
   tx_power:
     analyzer_setup:
       span_hz: 5000000
-      rbw_hz: 30000
-      vbw_hz: 100000
+      rbw_hz: 300000
+      vbw_hz: 1000000
       ref_level_dbm: 20.0          
       use_peak_detector: true
     settle:
@@ -25,7 +25,7 @@ tests:
     analyzer_setup:
       # optional initial analyzer tuning before zoom loop:
       span_hz: 2000000          # initial span before zooms (optional)
-      rbw_hz: 30000
+      rbw_hz: 300000
       vbw_hz: 100000
       ref_level_dbm: 20.0          
       use_peak_detector: true
@@ -34,12 +34,12 @@ tests:
       settle_after_lora_cw_on_s: 0.40
     zooms:
       - span_hz: 2000000        # Zoom 1
-        rbw_hz: 30000
+        rbw_hz: 300000
         vbw_hz: 100000
         delay_s: 0.20
       - span_hz: 200000         # Zoom 2
         rbw_hz: 10000
-        vbw_hz: 30000
+        vbw_hz: 300000
         delay_s: 0.20
       - span_hz: 20000          # Zoom 3
         rbw_hz: 1000
@@ -49,8 +49,8 @@ tests:
   # ===== LTE: Tx Power =====
   lte_defaults:
     analyzer_setup:
-      span_hz: 5000000
-      rbw_hz: 30000
+      span_hz: 2000000
+      rbw_hz: 300000
       vbw_hz: 100000
       ref_level_dbm: 25.0          
       use_peak_detector: true
@@ -61,7 +61,7 @@ tests:
     analyzer_setup:
       # optional initial analyzer tuning before zoom loop:
       span_hz: 2000000
-      rbw_hz: 30000
+      rbw_hz: 300000
       vbw_hz: 100000
       ref_level_dbm: 25.0
       use_peak_detector: true
@@ -71,12 +71,12 @@ tests:
       settle_after_lte_cw_on_s: 0.40
     zooms:
       - span_hz: 2000000        # Zoom 1
-        rbw_hz: 30000
+        rbw_hz: 300000
         vbw_hz: 100000
         delay_s: 0.20
       - span_hz: 200000         # Zoom 2
         rbw_hz: 10000
-        vbw_hz: 30000
+        vbw_hz: 300000
         delay_s: 0.20
       - span_hz: 20000          # Zoom 3
         rbw_hz: 1000
@@ -86,8 +86,19 @@ tests:
   # ===== LTE: EARFCN → Frequency (Hz) map =====
   # Keep as plain numbers so they parse as ints.
   lte_earfcn_map:
-    
-    18900: 1880000000
-    # add more as needed:
-    # 18000: 1710000000
-    # 18500: 1760000000
+    # EARFCN → Frequency (Hz) mappings for Band 12
+    23035: 701500000 # 701.5 MHz
+    23095: 707500000 # 707.5 MHz
+    23155: 713500000 # 713.5 MHz
+
+    # EARFCN → Frequency (Hz) mappings for Band 4
+    20000: 1715000000 # 1715 MHz
+    20175: 1732500000 # 1732.5 MHz
+    20350: 1750000000 # 1750 MHz
+
+    # EARFCN → Frequency (Hz) mappings for Band 2
+    18650: 1855000000 # 1855 MHz
+    18900: 1880000000 # 1880 MHz
+    19150: 1905000000 # 1905 MHz
+
+    # add more as needed
