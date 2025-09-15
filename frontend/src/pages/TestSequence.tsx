@@ -12,38 +12,47 @@ type TestItem = {
   name: string;
   minimized?: boolean;
   runCondition?: "Run Always" | "Run If Pass" | "Run If Fail";
-  frequencyText?: string; // e.g. "918.5 MHz" or "918500000"
+  frequencyText?: string; // e.g. "918.5" or "918500000"
   powerText?: string;     // e.g. "14"
-  // Tx Power limits:
   minValue?: number;
   maxValue?: number;
-  // Frequency Accuracy:
+
+  // Frequency Accuracy only
   ppmLimit?: number;
+
   includeScreenshot?: boolean;
 };
 
+type RunDefaults = {
+  testName: string;
+  type: string;
+  freqHz: number;
+  powerDbm: number;
+  minValue?: number;
+  maxValue?: number;
+  ppmLimit?: number;
+  defaultMac?: string | null;
+};
+
 /* ---------------- Defaults ---------------- */
-const TEST_LIBRARY = [
-  "Tx Power",
-  
-  "Frequency Accuracy",
-  
-];
+const TEST_LIBRARY = ["Tx Power", "Frequency Accuracy"];
 
 const BASE_DEFAULTS = {
   runCondition: "Run Always" as const,
-  frequencyText: "918.5 MHz",
+  frequencyText: "918.5", // LoRa default shown in input without "MHz"
   powerText: "14",
-  includeScreenshot: false,
+  minimized: false,
+  includeScreenshot: true,
 };
 
-/* ---------------- Helpers ---------------- */
+// Helpers to parse the first number in a string
+const NUM_RE = /[-+]?\d*\.?\d+(?:e[-+]?\d+)?/i;
 function parseFirstFreqHz(text: string | number | undefined): number {
   if (text == null) return 0;
-  const s = String(text).trim().replace(/,/g, "");
-  const m = s.match(/(\d+(\.\d+)?)/);
+  const s = String(text);
+  const m = s.match(NUM_RE);
   if (!m) return 0;
-  const val = parseFloat(m[1]);
+  const val = parseFloat(m[0]); // use the matched token
   // If user typed "918.5" assume MHz, else assume already in Hz
   return val < 1e6 ? Math.round(val * 1_000_000) : Math.round(val);
 }
@@ -60,51 +69,57 @@ const isFreqAccuracy = (t: TestItem | string) =>
 /* ---------------- Component ---------------- */
 export default function TestSequence() {
   const [tab, setTab] = useState<Protocol>("LoRa");
+
   const [sequences, setSequences] = useState<Record<Protocol, TestItem[]>>({
     LoRa: [],
     LTE: [],
     BLE: [],
   });
+
+  const [draggingLibTest, setDraggingLibTest] = useState<string | null>(null);
+  const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
+  const [dragOverCardId, setDragOverCardId] = useState<number | null>(null);
+  const [dragOverEdge, setDragOverEdge] = useState<"above" | "below" | null>(null);
+
   const nextId = useRef(1);
 
-  // DnD state
-  const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
-  const [draggingLibTest, setDraggingLibTest] = useState<string | null>(null);
-  const [dragOverCardId, setDragOverCardId] = useState<number | null>(null);
-  const [dragOverEdge, setDragOverEdge] = useState<"before" | "after" | null>(null);
-
-  // Run modal
   const [runOpen, setRunOpen] = useState(false);
-  const [runDefaults, setRunDefaults] = useState<{
-    freqHz: number;
-    powerDbm: number;
-    testName: string;
-    type: string;
-    minValue?: number;
-    maxValue?: number;
-    ppmLimit?: number;
-    defaultMac?: string | null;
-  } | null>(null);
+  const [runDefaults, setRunDefaults] = useState<RunDefaults | null>(null);
 
-  const totals = useMemo(
-    () => ({
-      LoRa: sequences.LoRa.length,
-      LTE: sequences.LTE.length,
-      BLE: sequences.BLE.length,
-    }),
+  const totalAll = useMemo(
+    () => sequences.LoRa.length + sequences.LTE.length + sequences.BLE.length,
     [sequences]
   );
-  const totalAll = totals.LoRa + totals.LTE + totals.BLE;
 
-  /* ---------- Mutators ---------- */
+  /* ---------- Helpers to update a test ---------- */
+  const updateTest = (id: number, patch: Partial<TestItem>) => {
+    setSequences((prev) => {
+      const copy: Record<Protocol, TestItem[]> = { ...prev };
+      copy[tab] = copy[tab].map((t) => (t.id === id ? { ...t, ...patch } : t));
+      return copy;
+    });
+  };
+
+  /* ---------- Add from library ---------- */
   const addTestToCurrent = (name: string) => {
     const id = nextId.current++;
     setSequences((prev) => {
       const copy = { ...prev };
-      const defaults: Partial<TestItem> = isFreqAccuracy(name)
-        ? { ...BASE_DEFAULTS, ppmLimit: 20 } // default ±20 ppm
+
+      // Per-tab defaults (fix #2): LTE cards start with 1880 MHz & 23 dBm
+      const base = isFreqAccuracy(name)
+        ? { ...BASE_DEFAULTS, ppmLimit: 20 }
         : { ...BASE_DEFAULTS, minValue: undefined, maxValue: undefined };
-      copy[tab] = [...copy[tab], { id, type: name, name, ...defaults }];
+
+      const tabDefaults: Partial<TestItem> =
+        tab === "LTE"
+          ? { frequencyText: "1880", powerText: "23" }
+          : tab === "LoRa"
+          ? { frequencyText: "918.5", powerText: "14" }
+          : {};
+
+      copy[tab] = [...copy[tab], { id, type: name, name, ...base, ...tabDefaults }];
+
       // collapse previous tests, keep the newly added open
       copy[tab] = copy[tab].map((t, i, arr) => (i === arr.length - 1 ? t : { ...t, minimized: true }));
       return copy;
@@ -127,51 +142,30 @@ export default function TestSequence() {
     });
   };
 
-  const updateTest = (id: number, patch: Partial<TestItem>) => {
-    setSequences((prev) => {
-      const copy = { ...prev };
-      copy[tab] = copy[tab].map((t) => (t.id === id ? { ...t, ...patch } : t));
-      return copy;
-    });
-  };
-
-  /* ---------- DnD: library → builder ---------- */
-  const onBuilderDragOver = (e: React.DragEvent) => {
-    if (draggingLibTest != null || draggingCardId != null) e.preventDefault();
-  };
-  const onBuilderDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (draggingLibTest) addTestToCurrent(draggingLibTest);
-    setDraggingLibTest(null);
-  };
-
-  /* ---------- DnD: reorder ---------- */
-  const onCardDragStart = (e: React.DragEvent, id: number) => {
+  /* ---------- Drag & Drop (cards) ---------- */
+  const onCardDragStart = (e: React.DragEvent<HTMLDivElement>, id: number) => {
     setDraggingCardId(id);
     e.dataTransfer.effectAllowed = "move";
   };
-  const onCardDragOver = (e: React.DragEvent, overId: number) => {
+  const onCardDragOver = (e: React.DragEvent<HTMLDivElement>, id: number) => {
     e.preventDefault();
-    if (draggingCardId == null || draggingCardId === overId) return;
-    const bounds = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const mid = bounds.top + bounds.height / 2;
-    setDragOverCardId(overId);
-    setDragOverEdge(e.clientY < mid ? "before" : "after");
+    if (draggingCardId == null) return;
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    setDragOverCardId(id);
+    setDragOverEdge(e.clientY < mid ? "above" : "below");
   };
-  const onCardDrop = (e: React.DragEvent, overId: number) => {
+  const onCardDrop = (e: React.DragEvent<HTMLDivElement>, id: number) => {
     e.preventDefault();
-    if (draggingCardId == null || dragOverCardId == null || !dragOverEdge) return;
     setSequences((prev) => {
-      const copy = { ...prev };
-      const arr = [...copy[tab]];
-      const fromIdx = arr.findIndex((t) => t.id === draggingCardId);
-      const overIdx = arr.findIndex((t) => t.id === overId);
-      if (fromIdx === -1 || overIdx === -1) return prev;
-      const [moved] = arr.splice(fromIdx, 1);
-      const insertIdx = dragOverEdge === "before" ? overIdx : overIdx + 1;
-      arr.splice(insertIdx, 0, moved);
-      copy[tab] = arr;
-      return copy;
+      const list = [...prev[tab]];
+      const from = list.findIndex((t) => t.id === draggingCardId);
+      const to = list.findIndex((t) => t.id === id);
+      if (from === -1 || to === -1) return prev;
+      const [item] = list.splice(from, 1);
+      const insertAt = to + (dragOverEdge === "below" ? 1 : 0);
+      list.splice(insertAt, 0, item);
+      return { ...prev, [tab]: list };
     });
     setDraggingCardId(null);
     setDragOverCardId(null);
@@ -183,17 +177,38 @@ export default function TestSequence() {
     setDragOverEdge(null);
   };
 
+  /* ---------- Drag from Library ---------- */
+  const onBuilderDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+  const onBuilderDrop = () => {
+    if (!draggingLibTest) return;
+    addTestToCurrent(draggingLibTest);
+    setDraggingLibTest(null);
+  };
+
   /* ---------- Play locally ---------- */
   const playSingle = (t: TestItem) => {
     const freqHz = parseFirstFreqHz(t.frequencyText);
     const powerDbm = parseFirstInt(t.powerText);
-    const defaultMac = localStorage.getItem("rfapp.lastMac") || null;
+
+    let defaultMac: string | null = null;
+    if (tab === "LTE") defaultMac = "80E1271FD8DD";
+
+    // IMPORTANT (fix #3): make testName include "LTE" when tab is LTE,
+    // because your original RunModal chooses the LTE endpoint by testName.
+    const nameForModal =
+      tab === "LTE"
+        ? `${"LTE"} ${t.type || "Test"}`
+        : tab === "LoRa"
+        ? `${"LoRa"} ${t.type || "Test"}`
+        : t.type || "Test";
 
     setRunDefaults({
-      freqHz: freqHz || 918_500_000,
-      powerDbm: Number.isFinite(powerDbm) ? powerDbm : 14,
-      testName: t.name || t.type || "Test",
+      testName: nameForModal,
       type: t.type,
+      freqHz: freqHz || (tab === "LTE" ? 1_880_000_000 : 918_500_000),
+      powerDbm: Number.isFinite(powerDbm) ? powerDbm : tab === "LTE" ? 23 : 14,
       minValue: t.minValue,
       maxValue: t.maxValue,
       ppmLimit: t.ppmLimit,
@@ -241,24 +256,37 @@ export default function TestSequence() {
             </div>
           </div>
 
-          {sequences[tab].length === 0 ? (
-            <div className="tsq-dropzone">
-              No {tab} tests yet
-              <br />
-              Drag tests from the library to get started
-            </div>
-          ) : (
-            <div className="tsq-tests">
-              {sequences[tab].map((t) => {
+          {/* Builder body */}
+          <div className="tsq-card-body">
+            {sequences[tab].length === 0 ? (
+              // Keep centered empty state without touching global CSS
+              <div
+                className="tsq-empty"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 220,
+                  textAlign: "center",
+                  width: "100%",
+                }}
+              >
+                <div className="tsq-empty-icon">🧪</div>
+                <div className="tsq-empty-title">No tests yet</div>
+                <div className="tsq-empty-sub">Drag a test from the right to get started</div>
+              </div>
+            ) : (
+              sequences[tab].map((t) => {
                 const isFA = isFreqAccuracy(t);
                 return (
-                  <article
+                  <div
                     key={t.id}
                     className={[
-                      "tsq-test",
-                      t.minimized ? "is-min" : "",
+                      "tsq-card", // keep original border style
+                      "tsq-test-card",
                       draggingCardId === t.id ? "is-dragging" : "",
-                      dragOverCardId === t.id && dragOverEdge ? `is-over is-${dragOverEdge}` : "",
+                      dragOverCardId === t.id ? `is-over-${dragOverEdge}` : "",
                     ].join(" ")}
                     draggable
                     onDragStart={(e) => onCardDragStart(e, t.id)}
@@ -300,35 +328,26 @@ export default function TestSequence() {
                           <input
                             className="tsq-input"
                             value={t.name}
-                            onChange={(e) => updateTest(t.id, { name: e.target.value })}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setSequences((prev) => {
+                                const copy = { ...prev };
+                                copy[tab] = copy[tab].map((x) => (x.id === t.id ? { ...x, name: v } : x));
+                                return copy;
+                              });
+                            }}
+                            placeholder="e.g., Tx Power"
                           />
                         </div>
 
                         <div className="tsq-form-grid">
                           <div className="tsq-form-row">
-                            <label>Run Condition</label>
-                            <select
-                              className="tsq-input"
-                              value={t.runCondition ?? "Run Always"}
-                              onChange={(e) =>
-                                updateTest(t.id, {
-                                  runCondition: e.target.value as TestItem["runCondition"],
-                                })
-                              }
-                            >
-                              <option>Run Always</option>
-                              <option>Run If Pass</option>
-                              <option>Run If Fail</option>
-                            </select>
-                          </div>
-
-                          <div className="tsq-form-row">
-                            <label>Frequency</label>
+                            <label>{tab === "LTE" ? "EARFCN / Frequency (MHz)" : "Frequency (MHz)"}</label>
                             <input
                               className="tsq-input"
                               value={t.frequencyText ?? ""}
                               onChange={(e) => updateTest(t.id, { frequencyText: e.target.value })}
-                              placeholder="e.g., 918.5 MHz or 918500000"
+                              placeholder="e.g., 918.5 or 918500000"
                             />
                           </div>
                         </div>
@@ -377,37 +396,26 @@ export default function TestSequence() {
                             </>
                           ) : (
                             <div className="tsq-form-row">
-                              <label>PPM Limit (±)</label>
+                              <label>PPM Limit</label>
                               <input
                                 className="tsq-input"
                                 type="number"
-                                value={t.ppmLimit ?? 20}
+                                value={t.ppmLimit ?? ""}
                                 onChange={(e) =>
-                                  updateTest(t.id, {
-                                    ppmLimit: e.target.value === "" ? undefined : Number(e.target.value),
-                                  })
+                                  updateTest(t.id, { ppmLimit: e.target.value === "" ? undefined : Number(e.target.value) })
                                 }
-                                placeholder="e.g., 20 (ppm)"
+                                placeholder="e.g., 20"
                               />
                             </div>
                           )}
                         </div>
-
-                        <label className="tsq-check">
-                          <input
-                            type="checkbox"
-                            checked={!!t.includeScreenshot}
-                            onChange={(e) => updateTest(t.id, { includeScreenshot: e.target.checked })}
-                          />{" "}
-                          Include Spectrum Screenshot
-                        </label>
                       </div>
                     )}
-                  </article>
+                  </div>
                 );
-              })}
-            </div>
-          )}
+              })
+            )}
+          </div>
         </section>
 
         {/* Library */}
@@ -416,14 +424,10 @@ export default function TestSequence() {
             <div>
               <div className="tsq-card-title">Available Tests</div>
               <div className="tsq-card-sub">Drag tests to the {tab} builder</div>
-
             </div>
-            {/* <button className="tsq-btn ghost">
-              <Plus className="mr-1" size={16} /> Add
-            </button> */}
           </div>
 
-          <div className="tsq-library-list">
+          <div className="tsq-card-body">
             {TEST_LIBRARY.map((name) => (
               <div
                 key={name}
@@ -443,23 +447,14 @@ export default function TestSequence() {
               </div>
             ))}
           </div>
-
-          <div className="tsq-quick">
-            <div className="tsq-quick-title">Quick Actions</div>
-            <div className="tsq-quick-grid">
-              <button className="tsq-btn">Load Template</button>
-              <button className="tsq-btn">Save as Template</button>
-            </div>
-          </div>
         </aside>
       </div>
 
-      {/* Run modal */}
+      {/* Run Modal */}
       {runOpen && runDefaults && (
         <RunModal
           open={runOpen}
           onClose={() => setRunOpen(false)}
-          // mode by test type
           mode={isFreqAccuracy(runDefaults.type) ? "freqAccuracy" : "txPower"}
           testName={runDefaults.testName}
           defaultFreqHz={runDefaults.freqHz}

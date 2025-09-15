@@ -172,13 +172,11 @@ export default function RunModal({
   const ensureMac = (): string | null => {
     const existing = mac.trim();
     if (existing.length >= 6) return existing;
-    const last = localStorage.getItem("rfapp.lastMac") || "";
     const typed =
-      window.prompt("Enter DUT MAC (hex, e.g. 80E1271FD8DD):", existing || last) || "";
+      window.prompt("Enter DUT MAC (hex, e.g. 80E1271FD8DD):", existing) || "";
     const clean = typed.trim();
     if (clean.length >= 6) {
       setMac(clean);
-      localStorage.setItem("rfapp.lastMac", clean);
       return clean;
     }
     return null;
@@ -193,7 +191,20 @@ export default function RunModal({
     setRunning(true);
 
     // Endpoint selection by mode
-    const path = mode === "freqAccuracy" ? "/tests/freq-accuracy/stream" : "/tests/tx-power/stream";
+    let path: string;
+    const isLTE = /lte/i.test(testName || "");
+
+    if (mode === "freqAccuracy") {
+      // NEW: route LTE FA to its own endpoint
+      path = isLTE
+        ? "/tests/lte-frequency-accuracy/stream"
+        : "/tests/freq-accuracy/stream";
+    } else {
+      // Tx Power stays the same logic
+      path = isLTE
+        ? "/tests/lte-tx-power/stream"
+        : "/tests/tx-power/stream";
+    }
 
     // Log header
     if (mode === "freqAccuracy") {
@@ -226,7 +237,20 @@ export default function RunModal({
           };
 
     const es = openTestStream(path, body, {
-      onStart: () => pushLog("Run started"),
+      // ⬇️ Minimal change: accept the start event payload and print LTE params (freq & EARFCN)
+      onStart: (e: AnyEvt) => {
+        pushLog("Run started");
+        if (/lte/i.test(testName || "") && (e as StartEvt)?.params) {
+          const p = (e as StartEvt).params;
+          if (p.freq_hz && p.earfcn) {
+            pushLog(
+              `LTE Params → Frequency: ${p.freq_hz} Hz (${(p.freq_hz / 1e6).toFixed(
+                1
+              )} MHz), EARFCN: ${p.earfcn}`
+            );
+          }
+        }
+      },
       onStep: (e: AnyEvt) => {
         const key = (e as any).key as StepKey | undefined;
         if (key && ORDER.includes(key)) {
@@ -345,8 +369,7 @@ export default function RunModal({
           <div className="tsq-modal-title">Run {testName} (Local)</div>
         </div>
 
-        <div className={`tsq-run-form ${
-            mode === "txPower" ? "txpower-grid" : "freqacc-grid"}`}>
+        <div className={`tsq-run-form ${mode === "txPower" ? "txpower-grid" : "freqacc-grid"}`}>
           <label className="tsq-field">
             <span>MAC</span>
             <input

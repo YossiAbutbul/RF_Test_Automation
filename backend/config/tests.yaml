@@ -1,32 +1,93 @@
-# Centralized RF test configuration
-version: 1
+# ---------- Global (used by helpers) ----------
+marker_name: "M1"
+default_delay_s: 0.15
 
-defaults:
-  spectrum:
-    marker: "MARK1"
-    # default delay after each SCPI action (seconds)
-    default_delay_s: 1.0
+# Apply this offset to the analyzer reference level globally (all tests)
+# Set to 0 if you don't want any global offset.
+ref_offset_db: 20.5
 
+# ---------- All test configs live under this key (used by get_test_config) ----------
 tests:
+  # ===== LoRa: Tx Power =====
   tx_power:
     analyzer_setup:
-      span_hz: 5000000         # 5 MHz
-      rbw_hz: 100000           # 100 kHz 
-      vbw_hz: 100000           # 100 kHz 
-      ref_level_dbm: 20.0      # optional
-      ref_offset_db: 20.5      # optional
+      span_hz: 5000000
+      rbw_hz: 30000
+      vbw_hz: 100000
+      ref_level_dbm: 20.0          
       use_peak_detector: true
     settle:
-      after_center_s: 0.00
-      after_cw_on_s: 0.60
+      after_center_s: 0.20
+      after_lora_cw_on_s: 0.60
 
+  # ===== LoRa: Frequency Accuracy (exactly 3 zooms) =====
   frequency_accuracy:
-    base:
+    analyzer_setup:
+      # optional initial analyzer tuning before zoom loop:
+      span_hz: 2000000          # initial span before zooms (optional)
+      rbw_hz: 30000
+      vbw_hz: 100000
+      ref_level_dbm: 20.0          
       use_peak_detector: true
-      # optional settle after setting the center frequency
-      settle_after_center_s: 0.5
-      settle_after_cw_on_s: 1.0
+    base:
+      settle_after_center_s: 0.20
+      settle_after_lora_cw_on_s: 0.40
     zooms:
-      - { span_hz: 2000000, rbw_hz: 1000, vbw_hz: 3000, delay_s: 1.0 }
-      - { span_hz: 100000,  rbw_hz: 100, vbw_hz: 1000, delay_s: 1.0 }
-      - { span_hz: 10000,   rbw_hz: 100, vbw_hz: 1000, delay_s: 1.0 }
+      - span_hz: 2000000        # Zoom 1
+        rbw_hz: 30000
+        vbw_hz: 100000
+        delay_s: 0.20
+      - span_hz: 200000         # Zoom 2
+        rbw_hz: 10000
+        vbw_hz: 30000
+        delay_s: 0.20
+      - span_hz: 20000          # Zoom 3
+        rbw_hz: 1000
+        vbw_hz: 3000
+        delay_s: 0.20
+
+  # ===== LTE: Tx Power =====
+  lte_defaults:
+    analyzer_setup:
+      span_hz: 5000000
+      rbw_hz: 30000
+      vbw_hz: 100000
+      ref_level_dbm: 25.0          
+      use_peak_detector: true
+    settle_after_cw_on_s: 0.30
+
+  # ===== LTE: Frequency Accuracy (new) =====
+  lte_frequency_accuracy:
+    analyzer_setup:
+      # optional initial analyzer tuning before zoom loop:
+      span_hz: 2000000
+      rbw_hz: 30000
+      vbw_hz: 100000
+      ref_level_dbm: 25.0
+      use_peak_detector: true
+    base:
+      settle_after_center_s: 0.20
+      settle_after_lte_modem_on_s: 0.30
+      settle_after_lte_cw_on_s: 0.40
+    zooms:
+      - span_hz: 2000000        # Zoom 1
+        rbw_hz: 30000
+        vbw_hz: 100000
+        delay_s: 0.20
+      - span_hz: 200000         # Zoom 2
+        rbw_hz: 10000
+        vbw_hz: 30000
+        delay_s: 0.20
+      - span_hz: 20000          # Zoom 3
+        rbw_hz: 1000
+        vbw_hz: 3000
+        delay_s: 0.20
+
+  # ===== LTE: EARFCN → Frequency (Hz) map =====
+  # Keep as plain numbers so they parse as ints.
+  lte_earfcn_map:
+    
+    18900: 1880000000
+    # add more as needed:
+    # 18000: 1710000000
+    # 18500: 1760000000
