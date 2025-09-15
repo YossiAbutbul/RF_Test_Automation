@@ -272,7 +272,7 @@ export default function TestSequence() {
                   width: "100%",
                 }}
               >
-                <div className="tsq-empty-icon">🧪</div>
+                <div className="tsq-empty-icon">📥</div>
                 <div className="tsq-empty-title">No tests yet</div>
                 <div className="tsq-empty-sub">Drag a test from the right to get started</div>
               </div>

@@ -6,9 +6,15 @@ on:
     tags: ["**"]
   delete:
   create:
+  workflow_dispatch: {}   # allow manual runs from Actions tab
+
+concurrency:
+  group: mirror-to-azure-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   mirror:
+    if: github.event.repository.fork == false   # don't run on forks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full history
@@ -17,22 +23,47 @@ jobs:
           fetch-depth: 0
           lfs: false   # set true if you use Git LFS
 
-      - name: Configure Git
+      - name: Configure Git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Add Azure remote
+      - name: Build Azure remote URL (with creds)
+        id: build
         env:
           AZURE_DEVOPS_USERNAME: ${{ secrets.AZURE_DEVOPS_USERNAME }}
           AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
           AZURE_DEVOPS_URL: ${{ secrets.AZURE_DEVOPS_URL }}
         run: |
-          AZURE_URL_WITH_CREDS=$(echo "$AZURE_DEVOPS_URL" \
-            | sed "s#https://#https://${AZURE_DEVOPS_USERNAME}:${AZURE_DEVOPS_PAT}@#")
-          git remote add azure "$AZURE_URL_WITH_CREDS"
+          set -euo pipefail
+          if [ -z "${AZURE_DEVOPS_USERNAME}" ] || [ -z "${AZURE_DEVOPS_PAT}" ] || [ -z "${AZURE_DEVOPS_URL}" ]; then
+            echo "One or more Azure secrets are missing" >&2
+            exit 1
+          fi
+          URL_WITH_CREDS="$(echo "$AZURE_DEVOPS_URL" | sed "s#https://#https://${AZURE_DEVOPS_USERNAME}:${AZURE_DEVOPS_PAT}@#")"
+          echo "url=$URL_WITH_CREDS" >> "$GITHUB_OUTPUT"
 
-      - name: Mirror all refs to Azure
+      - name: Add/Update 'azure' remote
         run: |
+          set -euo pipefail
+          if git remote get-url azure >/dev/null 2>&1; then
+            git remote set-url azure "${{ steps.build.outputs.url }}"
+          else
+            git remote add azure "${{ steps.build.outputs.url }}"
+          fi
+          # Show remotes but redact credentials in logs
+          git remote -v | sed 's#https://.*@#https://***:***@#'
+
+      - name: Mirror all refs to Azure (with retry)
+        run: |
+          set -euo pipefail
           git fetch --all --prune
-          git push --mirror azure
+          for i in 1 2 3; do
+            if git push --mirror azure; then
+              exit 0
+            fi
+            echo "Push failed (attempt $i). Retrying in 5s..."
+            sleep 5
+          done
+          echo "Push failed after 3 attempts." >&2
+          exit 1
