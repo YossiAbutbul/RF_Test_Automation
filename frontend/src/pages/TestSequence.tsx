@@ -455,17 +455,17 @@ export default function TestSequence() {
         <RunModal
           open={runOpen}
           onClose={() => setRunOpen(false)}
-          mode={isFreqAccuracy(runDefaults.type) ? "freqAccuracy" : "txPower"}
-          testName={runDefaults.testName}
-          defaultFreqHz={runDefaults.freqHz}
-          defaultPowerDbm={runDefaults.powerDbm}
-          defaultMac={runDefaults.defaultMac || undefined}
-          // tx-power limits
-          minValue={runDefaults.minValue}
-          maxValue={runDefaults.maxValue}
-          // freq-accuracy default tolerance
-          defaultPpmLimit={runDefaults.ppmLimit ?? 20}
+          protocol={tab}                          // NEW
+          testName={runDefaults?.testName}
+          mode={/frequency/i.test(runDefaults?.testName || "") ? "freqAccuracy" : "txPower"}
+          defaultFreqHz={runDefaults?.freqHz}
+          defaultPowerDbm={runDefaults?.powerDbm}
+          defaultMac={runDefaults?.defaultMac || "80E1271FD8DD"}
+          minValue={runDefaults?.minValue ?? null}
+          maxValue={runDefaults?.maxValue ?? null}
+          defaultPpmLimit={runDefaults?.ppmLimit ?? 20}
         />
+
       )}
     </div>
   );

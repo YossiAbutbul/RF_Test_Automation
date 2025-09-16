@@ -171,9 +171,9 @@
   height: 18px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: #9da6f3;
   font-size: 12px;
-  color: #374151;
+  color: #ffffff;
   font-weight: 600;
 }
 .tsq-badge.has-count {
@@ -460,7 +460,7 @@
   --tsq-fs-sm: clamp(12px, 0.85vw, 13px);
   --tsq-fs-md: clamp(13px, 0.95vw, 15px);
   --tsq-fs-lg: clamp(16px, 1.2vw, 20px);
-  --tsq-pad-sm: clamp(6px, 0.6vw, 10px);
+  --tsq-pad-sm: clamp(6px, 0.6vw, 8px);
   --tsq-pad-md: clamp(8px, 0.8vw, 14px);
   --tsq-radius: 12px;
 }
