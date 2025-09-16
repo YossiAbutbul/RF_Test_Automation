@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle, Circle, Loader2, XCircle } from "lucide-react";
-import { openTestStream } from "@/api/tests";
+import { Bold, CheckCircle, Circle, Loader2, XCircle } from "lucide-react";
+import { LoRa, LTE, BLE, AnyEvt } from "@/tests/runners";
 import "./css/RunModal.css";
 
-/** --------- Types & Labels --------- */
-
+type Protocol = "LoRa" | "LTE" | "BLE";
 type TestMode = "txPower" | "freqAccuracy";
 
 type StepKey =
@@ -43,54 +42,28 @@ const initSteps = (): Record<StepKey, StepStatus> =>
     {} as Record<StepKey, StepStatus>
   );
 
-/** --------- Event payloads from SSE (union, permissive) --------- */
-type StepEvt = {
-  type: "step";
-  key: StepKey;
-  status: "start" | "done" | "error";
-  message?: string;
-  measuredDbm?: number;
-  measuredHz?: number;
-  errorHz?: number;
-  errorPpm?: number;
-};
-type ResultEvt = {
-  type: "result";
-  measuredDbm?: number;
-  measuredHz?: number;
-  errorHz?: number;
-  errorPpm?: number;
-  pass_?: boolean | null;
-};
-type LogEvt = { type: "log"; message: string };
-type StartEvt = { type: "start"; test: string; params: any };
-type ErrEvt = { type: "error"; error: string };
-type AnyEvt = StepEvt | ResultEvt | LogEvt | StartEvt | ErrEvt | Record<string, any>;
-
-/** --------- Props --------- */
 type Props = {
   open: boolean;
   onClose: () => void;
 
+  protocol?: Protocol;
   mode?: TestMode; // default = "txPower"
   testName?: string;
 
-  // Shared defaults
   defaultFreqHz?: number;
   defaultPowerDbm?: number;
   defaultMac?: string;
 
-  // Tx-Power limits (optional)
   minValue?: number | null;
   maxValue?: number | null;
 
-  // Freq-Accuracy tolerance (optional)
   defaultPpmLimit?: number;
 };
 
 export default function RunModal({
   open,
   onClose,
+  protocol = "LoRa",
   mode = "txPower",
   testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
   defaultFreqHz = 918_500_000,
@@ -112,37 +85,24 @@ export default function RunModal({
   const [logs, setLogs] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
 
-  // results: support both tests
+  // results
   const [resTx, setResTx] = useState<null | { measuredDbm?: number; pass?: boolean }>(null);
-  const [resFa, setResFa] = useState<
-    | null
-    | { measuredHz?: number; errorHz?: number; errorPpm?: number; pass?: boolean }
-  >(null);
+  const [resFa, setResFa] = useState<null | { measuredHz?: number; errorHz?: number; errorPpm?: number; pass?: boolean }>(null);
 
-  // auto-scroll log
   const logRef = useRef<HTMLPreElement | null>(null);
   useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
   useEffect(() => {
     if (!open) {
       abort();
       reset();
-    } else {
-      setTimeout(() => {
-        document.querySelector<HTMLInputElement>("input[data-mac-input]")?.focus();
-      }, 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const canStart = useMemo(
-    () => Number.isFinite(freqHz) && Number.isFinite(powerDbm),
-    [freqHz, powerDbm]
-  );
+  const canStart = useMemo(() => Number.isFinite(freqHz) && Number.isFinite(powerDbm), [freqHz, powerDbm]);
 
   const pushLog = (line: string) =>
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${line}`]);
@@ -155,7 +115,6 @@ export default function RunModal({
     setLogs([]);
   };
 
-  // Sequential step setter: when a new step starts "doing", auto-finish previous "doing"
   const setStepSeq = (key: StepKey, status: StepStatus) =>
     setSteps((prev) => {
       const next = { ...prev };
@@ -172,8 +131,7 @@ export default function RunModal({
   const ensureMac = (): string | null => {
     const existing = mac.trim();
     if (existing.length >= 6) return existing;
-    const typed =
-      window.prompt("Enter DUT MAC (hex, e.g. 80E1271FD8DD):", existing) || "";
+    const typed = window.prompt("Enter DUT MAC (hex, e.g. 80E1271FD8DD):", existing) || "";
     const clean = typed.trim();
     if (clean.length >= 6) {
       setMac(clean);
@@ -190,88 +148,34 @@ export default function RunModal({
     reset();
     setRunning(true);
 
-    // Endpoint selection by mode
-    let path: string;
-    const isLTE = /lte/i.test(testName || "");
+    pushLog(`Starting ${protocol} ${testName}...`);
 
-    if (mode === "freqAccuracy") {
-      // NEW: route LTE FA to its own endpoint
-      path = isLTE
-        ? "/tests/lte-frequency-accuracy/stream"
-        : "/tests/freq-accuracy/stream";
-    } else {
-      // Tx Power stays the same logic
-      path = isLTE
-        ? "/tests/lte-tx-power/stream"
-        : "/tests/tx-power/stream";
-    }
-
-    // Log header
-    if (mode === "freqAccuracy") {
-      pushLog(
-        `SSE ${path} (freq=${freqHz}, power=${powerDbm}, mac=${macOk}, ppm_limit=${ppmLimit})`
-      );
-    } else {
-      pushLog(
-        `SSE ${path} (freq=${freqHz}, power=${powerDbm}, mac=${macOk}${
-          minValue != null ? `, min=${minValue}` : ""
-        }${maxValue != null ? `, max=${maxValue}` : ""})`
-      );
-    }
-
-    // Params per mode
-    const body =
-      mode === "freqAccuracy"
-        ? {
-            mac: macOk,
-            freq_hz: freqHz,
-            power_dbm: powerDbm,
-            ppm_limit: ppmLimit ?? null,
-          }
-        : {
-            mac: macOk,
-            freq_hz: freqHz,
-            power_dbm: powerDbm,
-            min_value: minValue ?? null,
-            max_value: maxValue ?? null,
-          };
-
-    const es = openTestStream(path, body, {
-      // ⬇️ Minimal change: accept the start event payload and print LTE params (freq & EARFCN)
+    const handlers = {
       onStart: (e: AnyEvt) => {
         pushLog("Run started");
-        if (/lte/i.test(testName || "") && (e as StartEvt)?.params) {
-          const p = (e as StartEvt).params;
-          if (p.freq_hz && p.earfcn) {
-            pushLog(
-              `LTE Params → Frequency: ${p.freq_hz} Hz (${(p.freq_hz / 1e6).toFixed(
-                1
-              )} MHz), EARFCN: ${p.earfcn}`
-            );
-          }
+        const p = (e as any)?.params;
+        if (p?.freq_hz && p?.earfcn) {
+          pushLog(
+            `LTE Params → Frequency: ${p.freq_hz} Hz (${(p.freq_hz / 1e6).toFixed(1)} MHz), EARFCN: ${p.earfcn}`
+          );
         }
       },
       onStep: (e: AnyEvt) => {
         const key = (e as any).key as StepKey | undefined;
         if (key && ORDER.includes(key)) {
-          const rawStatus = (e as any).status;
-          const status: StepStatus =
-            rawStatus === "error" ? "error" : rawStatus === "done" ? "done" : "doing";
+          const raw = (e as any).status;
+          const status: StepStatus = raw === "error" ? "error" : raw === "done" ? "done" : "doing";
           setStepSeq(key, status);
         }
         if ((e as any).message) pushLog((e as any).message);
 
-        // progressive updates
         if (typeof (e as any).measuredDbm === "number") {
           setResTx((f) => ({ ...(f || {}), measuredDbm: (e as any).measuredDbm }));
         }
         if (typeof (e as any).measuredHz === "number") {
           setResFa((f) => ({ ...(f || {}), measuredHz: (e as any).measuredHz }));
         }
-        if (
-          typeof (e as any).errorHz === "number" ||
-          typeof (e as any).errorPpm === "number"
-        ) {
+        if (typeof (e as any).errorHz === "number" || typeof (e as any).errorPpm === "number") {
           setResFa((f) => ({
             ...(f || {}),
             errorHz: (e as any).errorHz,
@@ -320,7 +224,7 @@ export default function RunModal({
           return next;
         });
         pushLog(`Error: ${(e as any).error}`);
-        es.close();
+        esRef.current?.close();
         esRef.current = null;
         setRunning(false);
       },
@@ -334,19 +238,34 @@ export default function RunModal({
           return next;
         });
         setRunning(false);
-        es.close();
+        esRef.current?.close();
         esRef.current = null;
       },
-    });
+    };
 
-    // Guard: if the server closes without error/done
+    let es: EventSource;
+    if (protocol === "LoRa") {
+      if (mode === "freqAccuracy") {
+        es = LoRa.runLoRaFrequencyAccuracy({ mac: macOk, freqHz, powerDbm, ppmLimit }, handlers);
+      } else {
+        es = LoRa.runLoRaTxPower({ mac: macOk, freqHz, powerDbm, minValue, maxValue }, handlers);
+      }
+    } else if (protocol === "LTE") {
+      if (mode === "freqAccuracy") {
+        es = LTE.runLTEFrequencyAccuracy({ mac: macOk, freqHz, powerDbm, ppmLimit }, handlers);
+      } else {
+        es = LTE.runLTETxPower({ mac: macOk, freqHz, powerDbm, minValue, maxValue }, handlers);
+      }
+    } else {
+      es = BLE.runBLECurrentConsumption({ mac: macOk }, handlers);
+    }
+
     es.onerror = () => {
       pushLog("Stream closed unexpectedly.");
       es.close();
       esRef.current = null;
       setRunning(false);
     };
-
     esRef.current = es;
   };
 
@@ -363,17 +282,19 @@ export default function RunModal({
 
   return (
     <div className="tsq-modal-backdrop" role="dialog" aria-modal="true">
-      <div className="tsq-modal">
+      <div className={`tsq-modal ${running ? "is-running" : ""}`}>
+        {/* Header */}
         <div className="tsq-run-header">
           {running && <div className="tsq-spinner" />}
           <div className="tsq-modal-title">Run {testName} (Local)</div>
         </div>
 
+        {/* Inputs (keep original grid class names) */}
         <div className={`tsq-run-form ${mode === "txPower" ? "txpower-grid" : "freqacc-grid"}`}>
           <label className="tsq-field">
             <span>MAC</span>
             <input
-              className="tsq-input"
+              className={`tsq-input${mac.trim().length < 6 ? " tsq-mac-warn" : ""}`}
               data-mac-input
               value={mac}
               onChange={(e) => setMac(e.target.value)}
@@ -403,7 +324,7 @@ export default function RunModal({
 
           {mode === "freqAccuracy" ? (
             <label className="tsq-field">
-              <span>PPM Limit (±)</span>
+              <span>PPM Limit</span>
               <input
                 className="tsq-input"
                 type="number"
@@ -420,9 +341,9 @@ export default function RunModal({
                   className="tsq-input"
                   type="number"
                   value={minValue ?? ""}
-                  onChange={() => {}}
-                  placeholder="(use test config)"
-                  disabled
+                  onChange={() => void 0}
+                  placeholder="—"
+                  disabled={running}
                 />
               </label>
               <label className="tsq-field">
@@ -431,119 +352,84 @@ export default function RunModal({
                   className="tsq-input"
                   type="number"
                   value={maxValue ?? ""}
-                  onChange={() => {}}
-                  placeholder="(use test config)"
-                  disabled
+                  onChange={() => void 0}
+                  placeholder="—"
+                  disabled={running}
                 />
               </label>
             </>
           )}
         </div>
 
-        <div className="tsq-run-meta">
-          <div className="tsq-meta-item">
-            <div className="tsq-meta-k">MAC</div>
-            <div className="tsq-meta-v">{mac || "—"}</div>
-          </div>
-          <div className="tsq-meta-item">
-            <div className="tsq-meta-k">Frequency</div>
-            <div className="tsq-meta-v">{freqHz.toLocaleString()} Hz</div>
-          </div>
-          <div className="tsq-meta-item">
-            <div className="tsq-meta-k">Power</div>
-            <div className="tsq-meta-v">{powerDbm} dBm</div>
-          </div>
-          {mode === "freqAccuracy" && (
-            <div className="tsq-meta-item">
-              <div className="tsq-meta-k">PPM Limit</div>
-              <div className="tsq-meta-v">±{ppmLimit}</div>
-            </div>
+        {/* Steps (exact structure: list + .icon + .label) */}
+        <ul className="tsq-steps">
+          {ORDER.map((k) => {
+            const st = steps[k];
+            return (
+              <li key={k} className={`tsq-step ${st}`}>
+                <span className="icon">
+                  {st === "doing" && <Loader2 className="spin" size={16} />}
+                  {st === "done" && <CheckCircle size={16} />}
+                  {st === "error" && <XCircle size={16} />}
+                  {st === "idle" && <Circle size={16} />}
+                </span>
+                <span className="label">{LABEL[k]}</span>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Progress bar block that your CSS animates */}
+        <div className="tsq-progress">{running && <div className="bar" />}</div>
+
+        {/* Result + status chips that your CSS styles */}
+        <div className="tsq-result">
+          {mode === "freqAccuracy" ? (
+            <>
+              {resFa?.measuredHz != null && <span>Measured:<b> {resFa.measuredHz.toLocaleString()} Hz</b> </span>}
+              {resFa?.errorHz != null && <span className="tsq-chip">{resFa.errorHz} Hz error</span>}
+              {resFa?.errorPpm != null && (
+                <span className="tsq-chip">{resFa.errorPpm.toFixed(3)} ppm</span>
+              )}
+              {resFa?.pass != null && (
+                <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>
+                  {resFa.pass ? "PASS" : "FAIL"}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              {resTx?.measuredDbm != null && <span> Measured: <b>{resTx.measuredDbm.toFixed(2)} dBm</b></span>}
+              {resTx?.pass != null && (
+                <span className={`tsq-chip ${resTx.pass ? "pass" : "fail"}`}>
+                  {resTx.pass ? "PASS" : "FAIL"}
+                </span>
+              )}
+            </>
           )}
         </div>
 
-        <ol className="tsq-steps">
-          {ORDER.map((k) => (
-            <li key={k} className={`tsq-step ${steps[k]}`}>
-              <span className="icon">
-                <StatusIcon s={steps[k]} />
-              </span>
-              <span className="label">
-                {LABEL[k]}
-                {k === "connectDut" && mac ? ` (${mac})` : ""}
-              </span>
-            </li>
-          ))}
-        </ol>
+        {/* Log panel (keep .tsq-run-log) */}
+        <pre className="tsq-run-log" ref={logRef}>
+          {logs.join("\n")}
+        </pre>
 
-        {running && (
-          <div className="tsq-progress">
-            <div className="bar" />
-          </div>
-        )}
-
-        {/* Results */}
-        {mode === "freqAccuracy" && resFa && (
-          <div className="tsq-result">
-            Measured frequency: <strong>{resFa.measuredHz?.toLocaleString()} Hz</strong>{" "}
-            {typeof resFa.errorHz === "number" && (
-              <>
-                &nbsp;| &nbsp; Δf: <strong>{resFa.errorHz} Hz</strong>
-              </>
-            )}
-            {typeof resFa.errorPpm === "number" && (
-              <>
-                &nbsp;(<strong>{resFa.errorPpm.toFixed(3)} ppm</strong>)
-              </>
-            )}
-            {typeof resFa.pass === "boolean" && (
-              <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>
-                {resFa.pass ? "PASS" : "FAIL"}
-              </span>
-            )}
-          </div>
-        )}
-
-        {mode === "txPower" && resTx && (
-          <div className="tsq-result">
-            Measured: <strong>{resTx.measuredDbm?.toFixed(2)} dBm</strong>
-            {typeof resTx.pass === "boolean" && (
-              <span className={`tsq-chip ${resTx.pass ? "pass" : "fail"}`}>
-                {resTx.pass ? "PASS" : "FAIL"}
-              </span>
-            )}
-          </div>
-        )}
-
-        {logs.length > 0 && (
-          <pre ref={logRef} className="tsq-run-log">
-            {logs.join("\n")}
-          </pre>
-        )}
-
+        {/* Actions (keep .tsq-modal-actions + .tsq-btn classes) */}
         <div className="tsq-modal-actions">
           {!running ? (
-            <>
-              <button className="tsq-btn ghost" onClick={onClose}>
-                Close
-              </button>
-              <button className="tsq-btn primary" onClick={start} disabled={!canStart}>
-                Start
-              </button>
-            </>
+            <button className="tsq-btn primary" onClick={start}>
+              Start
+            </button>
           ) : (
             <button className="tsq-btn" onClick={abort}>
               Abort
             </button>
           )}
+          <button className="tsq-btn ghost" onClick={onClose} disabled={running}>
+            Close
+          </button>
         </div>
       </div>
     </div>
   );
-}
-
-function StatusIcon({ s }: { s: StepStatus }) {
-  if (s === "done") return <CheckCircle size={16} className="ok" />;
-  if (s === "doing") return <Loader2 size={16} className="spin" />;
-  if (s === "error") return <XCircle size={16} className="err" />;
-  return <Circle size={14} className="idle" />;
 }
