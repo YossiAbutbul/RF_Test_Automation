@@ -501,8 +501,12 @@ async def run_lte_tx_power_stream(
         async with managed_ble(mac) as dut:
             yield step("connectDut", "done")
 
-            yield _evt("log", message="LTE: modem ON")
-            await _dut_call(dut, "lte_modem_on")
+            try:
+                yield _evt("log", message="LTE: modem ON")
+                await _dut_call(dut, "lte_modem_on")
+            except Exception as e:
+                yield _evt("error", error=f"LTE Modem on failed: {e!s}")
+                return
 
             yield _evt("log", message="LTE: abort test (between commands)")
             await _dut_call(dut, "lte_abort_test")
@@ -524,7 +528,7 @@ async def run_lte_tx_power_stream(
                          ((max_value is None) or (measured <= max_value))
             yield _evt("result", measuredDbm=measured, pass_=passed)
 
-            yield _evt("log", message="LTE: abort + modem off (fast close)")
+            yield _evt("log", message="LTE: abort + modem off")
             try:
                 await _dut_call(dut, "lte_abort_test", timeout=CLOSE_DUT_TIMEOUT)
             except Exception as e:
@@ -679,7 +683,7 @@ async def run_lte_frequency_accuracy_stream(
                 pass_val = abs(err_ppm) <= ppm_limit
             yield _evt("result", measuredHz=measured_hz, errorHz=err_hz, errorPpm=err_ppm, pass_=pass_val)
 
-            yield _evt("log", message="LTE: abort + modem off (fast close)")
+            yield _evt("log", message="LTE: abort + modem off")
             try:
                 await _dut_call(dut, "lte_abort_test", timeout=CLOSE_DUT_TIMEOUT)
             except Exception as e:

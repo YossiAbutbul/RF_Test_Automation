@@ -484,10 +484,10 @@ export default function RunModal({
         {/* Results */}
         {mode === "freqAccuracy" && resFa && (
           <div className="tsq-result">
-            f: <strong>{resFa.measuredHz?.toLocaleString()} Hz</strong>{" "}
+            Measured frequency: <strong>{resFa.measuredHz?.toLocaleString()} Hz</strong>{" "}
             {typeof resFa.errorHz === "number" && (
               <>
-                &nbsp;| Δf: <strong>{resFa.errorHz} Hz</strong>
+                &nbsp;| &nbsp; Δf: <strong>{resFa.errorHz} Hz</strong>
               </>
             )}
             {typeof resFa.errorPpm === "number" && (
