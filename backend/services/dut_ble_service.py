@@ -125,7 +125,7 @@ class DUTBLE:
         """HWTP step 1: cat_m_modem_on"""
         if not self._connected:
             self.connect()
-        self.device.hwtp_get(cmd.HWTP_AT_MODEM_ON, timeout=10000)  # type: ignore
+        self.device.hwtp_get(cmd.HWTP_AT_MODEM_ON, timeout=12000)  # type: ignore
         time.sleep(0.2)
 
     def lte_cw_on(self, earfcn: int, power_dbm: int) -> None:

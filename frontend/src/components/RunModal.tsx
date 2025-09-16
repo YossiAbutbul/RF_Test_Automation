@@ -10,6 +10,7 @@ type StepKey =
   | "connectAnalyzer"
   | "configureAnalyzer"
   | "connectDut"
+  | "modemOn"
   | "cwOn"
   | "measure"
   | "cwOff"
@@ -20,13 +21,14 @@ const LABEL: Record<StepKey, string> = {
   connectAnalyzer: "Connect to spectrum analyzer",
   configureAnalyzer: "Configure analyzer",
   connectDut: "Connect to DUT (BLE)",
+  modemOn: "Turning LTE modem on",
   cwOn: "Send CW command",
   measure: "Measure from spectrum",
   cwOff: "Turn off CW",
   close: "Close sessions",
 };
 
-const ORDER: StepKey[] = [
+const BASE_ORDER: StepKey[] = [
   "connectAnalyzer",
   "configureAnalyzer",
   "connectDut",
@@ -36,8 +38,20 @@ const ORDER: StepKey[] = [
   "close",
 ];
 
-const initSteps = (): Record<StepKey, StepStatus> =>
-  ORDER.reduce(
+const LTE_ORDER: StepKey[] = [
+  "connectAnalyzer",
+  "configureAnalyzer",
+  "connectDut",
+  "modemOn",
+  "cwOn",
+  "measure",
+  "cwOff",
+  "close",
+];
+
+
+const initSteps = (order: StepKey[]): Record<StepKey, StepStatus> =>
+  order.reduce(
     (a, k) => ((a[k] = k === "connectAnalyzer" ? "doing" : "idle"), a),
     {} as Record<StepKey, StepStatus>
   );
@@ -78,10 +92,14 @@ export default function RunModal({
   const [freqHz, setFreqHz] = useState(defaultFreqHz);
   const [powerDbm, setPowerDbm] = useState(defaultPowerDbm);
   const [ppmLimit, setPpmLimit] = useState<number>(defaultPpmLimit);
+  
+
+  const ORDER = useMemo<StepKey[]>(() => (protocol === "LTE" ? LTE_ORDER : BASE_ORDER), [protocol]);
+  
 
   // run state
   const [running, setRunning] = useState(false);
-  const [steps, setSteps] = useState<Record<StepKey, StepStatus>>(initSteps());
+  const [steps, setSteps] = useState<Record<StepKey, StepStatus>>(() => initSteps(ORDER));
   const [logs, setLogs] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
 
@@ -103,15 +121,17 @@ export default function RunModal({
   }, [open]);
 
   const canStart = useMemo(() => Number.isFinite(freqHz) && Number.isFinite(powerDbm), [freqHz, powerDbm]);
+  const showLogPanel = running || logs.length > 0;
 
   const pushLog = (line: string) =>
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${line}`]);
+
 
   const reset = () => {
     setRunning(false);
     setResTx(null);
     setResFa(null);
-    setSteps(initSteps());
+    setSteps(initSteps(ORDER));
     setLogs([]);
   };
 
@@ -410,9 +430,11 @@ export default function RunModal({
         </div>
 
         {/* Log panel (keep .tsq-run-log) */}
-        <pre className="tsq-run-log" ref={logRef}>
-          {logs.join("\n")}
-        </pre>
+        {showLogPanel && (
+          <pre className="tsq-run-log" ref={logRef}>
+        {logs.join("\n")}
+          </pre>
+        )}
 
         {/* Actions (keep .tsq-modal-actions + .tsq-btn classes) */}
         <div className="tsq-modal-actions">
