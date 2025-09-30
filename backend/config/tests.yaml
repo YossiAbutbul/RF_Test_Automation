@@ -25,8 +25,7 @@ tests:
   # ===== LoRa: Frequency Accuracy (exactly 3 zooms) =====
   frequency_accuracy:
     analyzer_setup:
-      # optional initial analyzer tuning before zoom loop:
-      span_hz: 2000000          # initial span before zooms (optional)
+      span_hz: 2000000
       rbw_hz: 300000
       vbw_hz: 100000
       ref_level_dbm: 20.0
@@ -34,20 +33,19 @@ tests:
     base:
       settle_after_center_s: 0.250
       settle_after_lora_cw_on_s: 0.40
-    # NEW: added for compatibility (kept your base.* untouched)
     settle:
       after_center_s: 0.250 
       after_lora_cw_on_s: 0.40
     zooms:
-      - span_hz: 2000000        # Zoom 1
+      - span_hz: 2000000
         rbw_hz: 300000
         vbw_hz: 100000
         delay_s: 0.250
-      - span_hz: 200000         # Zoom 2
+      - span_hz: 200000
         rbw_hz: 10000
         vbw_hz: 300000
         delay_s: 0.250
-      - span_hz: 20000          # Zoom 3
+      - span_hz: 20000
         rbw_hz: 1000
         vbw_hz: 3000
         delay_s: 0.250
@@ -65,7 +63,6 @@ tests:
   # ===== LTE: Frequency Accuracy (new) =====
   lte_frequency_accuracy:
     analyzer_setup:
-      # optional initial analyzer tuning before zoom loop:
       span_hz: 2000000
       rbw_hz: 300000
       vbw_hz: 100000
@@ -76,21 +73,20 @@ tests:
       settle_after_lte_modem_on_s: 0.30
       settle_after_lte_cw_on_s: 0.40
     zooms:
-      - span_hz: 2000000        # Zoom 1
+      - span_hz: 2000000
         rbw_hz: 300000
         vbw_hz: 100000
         delay_s: 0.250
-      - span_hz: 200000         # Zoom 2
+      - span_hz: 200000
         rbw_hz: 10000
         vbw_hz: 300000
         delay_s: 0.250
-      - span_hz: 20000          # Zoom 3
+      - span_hz: 20000
         rbw_hz: 1000
         vbw_hz: 3000
         delay_s: 0.250
-
+    
   # ===== LTE: EARFCN → Frequency (Hz) map =====
-  # Keep as plain numbers so they parse as ints.
   lte_earfcn_map:
     # EARFCN → Frequency (Hz) mappings for Band 12
     23035: 701500000   # 701.5 MHz
@@ -107,4 +103,23 @@ tests:
     18900: 1880000000  # 1880 MHz
     19150: 1905000000  # 1905 MHz
 
-    # add more as needed
+  # ===== BLE: Tx Power =====
+  ble_defaults:
+    analyzer_setup:
+      span_hz: 2000000
+      rbw_hz: 100000
+      vbw_hz: 300000
+      ref_level_dbm: 20.0
+      use_peak_detector: true
+    settle_after_power_set_s: 0.30
+    settle_after_test_tone_s: 0.50
+
+  ble_tx_power:
+    # Channel table placeholder (index → frequency Hz).
+    # Extend later with actual BLE advertising/data channels.
+    channel_map:
+      37: 2402000000   # 2402 MHz
+      38: 2426000000   # 2426 MHz
+      39: 2480000000   # 2480 MHz
+    duration_s: 5      # default test tone duration
+    offset_hz: 0       # frequency offset (default 0, overridable)
