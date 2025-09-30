@@ -12,8 +12,9 @@ type TestItem = {
   name: string;
   minimized?: boolean;
   runCondition?: "Run Always" | "Run If Pass" | "Run If Fail";
-  frequencyText?: string; // e.g. "918.5" or "918500000"
-  powerText?: string;     // e.g. "14"
+  frequencyText?: string;  // e.g. "918.5" or "918500000"
+  powerText?: string;      // LoRa/LTE: e.g. "14"
+  powerBle?: string;       // BLE: e.g. "0x1F"
   minValue?: number;
   maxValue?: number;
 
@@ -27,9 +28,10 @@ type RunDefaults = {
   testName: string;
   type: string;
   freqHz: number;
-  powerDbm: number;
-  minValue?: number;
-  maxValue?: number;
+  powerDbm?: number;               // LoRa/LTE only (optional now)
+  powerBle?: string;               // BLE hex (e.g. "0x1F")
+  minValue?: number | null;        // can be null in callers
+  maxValue?: number | null;        // can be null in callers
   ppmLimit?: number;
   defaultMac?: string | null;
 };
@@ -116,7 +118,8 @@ export default function TestSequence() {
           ? { frequencyText: "1880", powerText: "23" }
           : tab === "LoRa"
           ? { frequencyText: "918.5", powerText: "14" }
-          : {};
+          : { frequencyText: "2402", powerBle: "31" }; // <-- BLE defaults
+
 
       copy[tab] = [...copy[tab], { id, type: name, name, ...base, ...tabDefaults }];
 
@@ -190,30 +193,57 @@ export default function TestSequence() {
   /* ---------- Play locally ---------- */
   const playSingle = (t: TestItem) => {
     const freqHz = parseFirstFreqHz(t.frequencyText);
+
+    // LoRa/LTE power (numeric string -> int)
     const powerDbm = parseFirstInt(t.powerText);
+
+    // BLE power (hex string, e.g. "0x1F" or "1F")
+    const powerBle = (t.powerBle || "").trim();
 
     let defaultMac: string | null = null;
     if (tab === "LTE") defaultMac = "80E1271FD8DD";
 
-    // IMPORTANT (fix #3): make testName include "LTE" when tab is LTE,
-    // because your original RunModal chooses the LTE endpoint by testName.
+    // Keep your existing naming logic (fine with the new wrapper)
     const nameForModal =
       tab === "LTE"
-        ? `${"LTE"} ${t.type || "Test"}`
+        ? `LTE ${t.type || "Test"}`
         : tab === "LoRa"
-        ? `${"LoRa"} ${t.type || "Test"}`
+        ? `LoRa ${t.type || "Test"}`
         : t.type || "Test";
 
-    setRunDefaults({
-      testName: nameForModal,
-      type: t.type,
-      freqHz: freqHz || (tab === "LTE" ? 1_880_000_000 : 918_500_000),
-      powerDbm: Number.isFinite(powerDbm) ? powerDbm : tab === "LTE" ? 23 : 14,
-      minValue: t.minValue,
-      maxValue: t.maxValue,
-      ppmLimit: t.ppmLimit,
-      defaultMac,
-    });
+    // Build runDefaults per protocol (so the wrapper can pass the right defaults)
+    if (tab === "BLE") {
+      setRunDefaults({
+        testName: nameForModal,
+        type: t.type,
+        freqHz: freqHz || 2_402_000_000,           // BLE default 2402 MHz
+        // no numeric power for BLE; store hex so the wrapper can pass it down:
+        powerBle: powerBle || "0x1F",
+        minValue: t.minValue ?? null,
+        maxValue: t.maxValue ?? null,
+        ppmLimit: t.ppmLimit ?? 20,
+        defaultMac,
+      });
+    } else {
+      // LoRa / LTE (unchanged behavior)
+      setRunDefaults({
+        testName: nameForModal,
+        type: t.type,
+        freqHz:
+          freqHz ||
+          (tab === "LTE" ? 1_880_000_000 : 918_500_000), // your old defaults
+        powerDbm: Number.isFinite(powerDbm)
+          ? powerDbm
+          : tab === "LTE"
+          ? 23
+          : 14,
+        minValue: t.minValue ?? null,
+        maxValue: t.maxValue ?? null,
+        ppmLimit: t.ppmLimit ?? 20,
+        defaultMac,
+      });
+    }
+
     setRunOpen(true);
   };
 
@@ -354,12 +384,17 @@ export default function TestSequence() {
 
                         <div className="tsq-form-grid">
                           <div className="tsq-form-row">
-                            <label>Power (dBm)</label>
+                            <label>{tab === "BLE" ? "Power Parameter" : "Power (dBm)"}</label>
                             <input
                               className="tsq-input"
-                              value={String(t.powerText ?? "")}
-                              onChange={(e) => updateTest(t.id, { powerText: e.target.value })}
-                              placeholder="e.g., 14"
+                              type={tab === "BLE" ? "text" : "number"}
+                              value={tab === "BLE" ? (t.powerBle ?? "") : (t.powerText ?? "")}
+                              placeholder={tab === "BLE" ? "e.g., 0x1F or 1F" : "e.g., 14"}
+                              onChange={(e) =>
+                                tab === "BLE"
+                                  ? updateTest(t.id, { powerBle: e.target.value })
+                                  : updateTest(t.id, { powerText: e.target.value })
+                              }
                             />
                           </div>
 
@@ -455,15 +490,18 @@ export default function TestSequence() {
         <RunModal
           open={true}
           onClose={() => setRunOpen(false)}
-          protocol={tab as "LoRa" | "LTE" | "BLE"}        // whichever is selected
+          protocol={tab as "LoRa" | "LTE" | "BLE"}
           mode={/frequency/i.test(runDefaults?.testName || "") ? "freqAccuracy" : "txPower"}
           testName={runDefaults?.testName}
           defaultFreqHz={runDefaults?.freqHz}
-          defaultPowerDbm={runDefaults?.powerDbm}
+          defaultPowerDbm={runDefaults?.powerDbm}          // LoRa/LTE only
           defaultMac={runDefaults?.defaultMac || "80E1271FD8DD"}
           minValue={runDefaults?.minValue ?? null}
           maxValue={runDefaults?.maxValue ?? null}
           defaultPpmLimit={runDefaults?.ppmLimit ?? 20}
+          bleDefaultPowerParamHex={
+            tab === "BLE" ? (runDefaults?.powerBle || "0x1F") : undefined
+          }
         />
       )}
     </div>

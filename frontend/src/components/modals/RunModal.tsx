@@ -8,37 +8,30 @@ export type TestMode = "txPower" | "freqAccuracy";
 type Props = {
   open: boolean;
   onClose: () => void;
-
-  protocol: Protocol;          // which modal to render
-  mode?: TestMode;             // default "txPower"
+  protocol: Protocol;
+  mode?: TestMode;
   testName?: string;
-
   defaultFreqHz?: number;
-  defaultPowerDbm?: number;    // LoRa/LTE only (BLE uses hex param in its own modal)
+  defaultPowerDbm?: number;
   defaultMac?: string;
-
   minValue?: number | null;
   maxValue?: number | null;
-
-  defaultPpmLimit?: number;    // for freqAccuracy
+  defaultPpmLimit?: number;
+  bleDefaultPowerParamHex?: string;
 };
 
-/**
- * Thin orchestrator that renders a protocol-specific modal.
- * - LoRa/LTE: fully wired to backend (unchanged flow)
- * - BLE: UI-only (Power Parameter hex), no backend wiring yet
- */
 export default function RunModal(props: Props) {
-  const { protocol, ...rest } = props;
+  const { protocol } = props;
 
   if (protocol === "BLE") {
+    // BLE: separate modal, no backend wire, Power Parameter (hex)
     return (
       <BleRunModal
         open={props.open}
         onClose={props.onClose}
-        defaultMac={props.defaultMac}
+        defaultMac={props.defaultMac ?? "80E1271FD8DD"}
         defaultFreqHz={props.defaultFreqHz ?? 2_402_000_000}
-        defaultPowerParamHex={"0x1F"}
+        defaultPowerParamHex={props.bleDefaultPowerParamHex ?? "31"}
         minValue={props.minValue ?? null}
         maxValue={props.maxValue ?? null}
       />
@@ -62,7 +55,7 @@ export default function RunModal(props: Props) {
     );
   }
 
-  // LoRa (default)
+  // LoRa
   return (
     <LoRaRunModal
       open={props.open}

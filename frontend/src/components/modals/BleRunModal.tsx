@@ -42,8 +42,8 @@ export default function BleRunModal({
   open,
   onClose,
   defaultMac = "80E1271FD8DD",
-  defaultFreqHz = 2402000000,
-  defaultPowerParamHex = "0x1F",
+  defaultFreqHz = 2_402_000_000,
+  defaultPowerParamHex = "0x31",
   minValue = null,
   maxValue = null,
 }: Props) {
@@ -160,7 +160,7 @@ export default function BleRunModal({
           </label>
 
           <label className="tsq-field">
-            <span>Power Parameter (hex)</span>
+            <span>Power Parameter</span>
             <input className="tsq-input" value={powerParam} onChange={(e) => setPowerParam(e.target.value)} placeholder="e.g. 0x1F or 1F" disabled={running} />
           </label>
 
