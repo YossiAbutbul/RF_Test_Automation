@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { ChevronDown, GripVertical, PlayCircle, Plus, Trash2 } from "lucide-react";
-import RunModal from "../components/RunModal";
+import RunModal from "../components/modals/RunModal";
 import "./css/TestSequence.css";
 
 /* ---------------- Types ---------------- */
@@ -453,11 +453,11 @@ export default function TestSequence() {
       {/* Run Modal */}
       {runOpen && runDefaults && (
         <RunModal
-          open={runOpen}
+          open={true}
           onClose={() => setRunOpen(false)}
-          protocol={tab}                          // NEW
-          testName={runDefaults?.testName}
+          protocol={tab as "LoRa" | "LTE" | "BLE"}        // whichever is selected
           mode={/frequency/i.test(runDefaults?.testName || "") ? "freqAccuracy" : "txPower"}
+          testName={runDefaults?.testName}
           defaultFreqHz={runDefaults?.freqHz}
           defaultPowerDbm={runDefaults?.powerDbm}
           defaultMac={runDefaults?.defaultMac || "80E1271FD8DD"}
@@ -465,7 +465,6 @@ export default function TestSequence() {
           maxValue={runDefaults?.maxValue ?? null}
           defaultPpmLimit={runDefaults?.ppmLimit ?? 20}
         />
-
       )}
     </div>
   );
