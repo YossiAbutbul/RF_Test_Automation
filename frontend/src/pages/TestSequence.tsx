@@ -118,7 +118,7 @@ export default function TestSequence() {
           ? { frequencyText: "1880", powerText: "23" }
           : tab === "LoRa"
           ? { frequencyText: "918.5", powerText: "14" }
-          : { frequencyText: "2402", powerBle: "31" }; // <-- BLE defaults
+          : { frequencyText: "2402", powerBle: "31" };
 
 
       copy[tab] = [...copy[tab], { id, type: name, name, ...base, ...tabDefaults }];

@@ -90,6 +90,14 @@ def cat_m_modem_off(device: BLE_Device):
     except Exception as e:
         print(f"Exception occurred: {e}")
 
+def ble_cw(device: BLE_Device, channel):
+    commands = cmd.HWTP_EX_BLE_TEST_TONE_START
+    payload = struct.HWTP_BleToneParams_t(
+        channel=int(channel),
+        duration=20,
+        offset=0,
+    )
+    device.hwtp_set(commands, payload)
 
 def main():
     # mac_input = input("Please enter MAC Address:\n")
@@ -99,6 +107,9 @@ def main():
     device = BLE_Device(0x80E1271FD8DD)
     device.Connect()
 
+    ble_cw(device=device, channel=0)
+    device.Disconnect()
+
     # analyzer = SpectrumAnalyzer(ip_address="172.16.10.1")
 
     # analyzer.connect()
@@ -107,13 +118,14 @@ def main():
 
     # time.sleep(2)
     # lora_cw(device=device, spectrum=analyzer, frequency=918000000, power=0, ref_offset=20)
-    cat_m_modem_om(device=device)
-    cat_m_cw_on(device, earfcn=18900, power=2300)
+    # cat_m_modem_om(device=device)
+    # cat_m_cw_on(device, earfcn=18900, power=2300)
     
-    time.sleep(2)
-    cat_m_abort_test(device=device)
-    cat_m_modem_off(device=device)
-    device.Disconnect()
+    # time.sleep(2)
+    # cat_m_abort_test(device=device)
+    # cat_m_modem_off(device=device)
+
+    
 
 # python -m SpectrumTestApp.main_test
 

@@ -1,19 +1,14 @@
+# backend/services/tests_ble.py
 from __future__ import annotations
 
 import asyncio
 from typing import AsyncGenerator, Dict, Optional, Any
 
 from services.tests_common import (
-    evt,
-    num,
-    ensure_analyzer_async,
-    spec_call,
-    dut_call,
-    managed_ble,
+    evt, num,
+    ensure_analyzer_async, spec_call, dut_call, managed_ble,
     apply_analyzer_setup,
     get_global_analyzer_ref_offset_db,
-    background_tidy_spectrum,
-    CLOSE_SPEC_TIMEOUT,
 )
 from services.test_config import (
     get_test_config,
@@ -21,214 +16,270 @@ from services.test_config import (
     get_default_delay_s,
 )
 
+# --------------------------------------------------------------------------------------
+# Config helpers
+# --------------------------------------------------------------------------------------
 
-# ========= Public API (non-stream wrapper, like LoRa) =========
+def _resolve_ble_channel_to_freq_hz(channel: int) -> int:
+    """
+    Your DLL maps BLE channels linearly:
+      ch 0 => 2402 MHz, then +2 MHz per channel, up to ch 39 => 2480 MHz.
+    We still allow overriding via YAML tests.ble_channel_map if provided.
+    """
+    try:
+        ch_map = get_test_config("ble_channel_map") or {}
+        if isinstance(ch_map, dict) and str(channel) in ch_map:
+            return int(float(ch_map[str(channel)]))
+    except Exception:
+        pass
 
-async def run_tx_power(
+    ch = int(channel)
+    if 0 <= ch <= 39:
+        return 2_402_000_000 + ch * 2_000_000
+    raise ValueError(f"Unsupported BLE channel (expected 0..39): {channel}")
+
+def _parse_hex_or_int(v: str | int) -> int:
+    """
+    Accept '0x1F', '1F', '31' or int → returns integer value.
+    """
+    if isinstance(v, int):
+        return v
+    s = str(v).strip()
+    try:
+        if s.lower().startswith("0x"):
+            return int(s, 16)
+        if any(c in "ABCDEFabcdef" for c in s):
+            return int(s, 16)
+        return int(s, 10)
+    except Exception as e:
+        raise ValueError(f"Invalid power parameter: {v!r}") from e
+
+# --------------------------------------------------------------------------------------
+# BLE — Tx Power (stream)
+# --------------------------------------------------------------------------------------
+
+async def run_ble_tx_power_stream(
     *,
-    freq_hz: int,
-    power_dbm: int,
     mac: str,
+    power_param_hex: str | int,            # e.g. "0x1F" or 31 (unused in simple_cw mode)
+    channel: int,                          # DLL channel index 0..39 (UI derives from freq)
+    min_value: Optional[float] = None,     # pass/fail lower bound (dBm)
+    max_value: Optional[float] = None,     # pass/fail upper bound (dBm)
+) -> AsyncGenerator[Dict, None]:
+    """
+    BLE Tx Power streaming generator.
+
+    Two modes:
+      A) simple_cw_mode=True (default): connect → tone → measure → done
+      B) simple_cw_mode=False: set power → save+reset → reconnect → tone → measure
+    """
+    def step(key: str, status: str = "start", **extra): return evt("step", key=key, status=status, **extra)
+    spec = None
+
+    try:
+        # Load test config
+        cfg      = get_test_config("ble_tx_power") or {}
+        a_set    = (cfg.get("analyzer_setup") or {}) if isinstance(cfg, dict) else {}
+        settle   = (cfg.get("settle") or {}) if isinstance(cfg, dict) else {}
+        marker   = get_marker_name()
+        delay    = get_default_delay_s()
+        ref_off  = get_global_analyzer_ref_offset_db()
+
+        duration_s = float(cfg.get("duration_s", 5.0))
+        offset_hz  = int(cfg.get("offset_hz", 0))
+        simple_cw  = bool(cfg.get("simple_cw_mode", True))
+        reset_wait_s        = float(cfg.get("reset_wait_s", 1.8))
+        reconnect_attempts  = int(cfg.get("reconnect_attempts", 5))
+        reconnect_backoff_s = float(cfg.get("reconnect_backoff_s", 0.35))
+
+        # Resolve center frequency from (channel)
+        freq_hz = _resolve_ble_channel_to_freq_hz(int(channel))
+
+        # Normalize the power parameter (not used in simple_cw)
+        power_const = _parse_hex_or_int(power_param_hex)
+
+        # Start event
+        yield evt(
+            "start",
+            test="ble-tx-power",
+            params={
+                "mac": mac,
+                "channel": int(channel),
+                "freq_hz": int(freq_hz),
+                "power_param": int(power_const),
+                "duration_s": duration_s,
+                "offset_hz": offset_hz,
+                "simple_cw_mode": simple_cw,
+            },
+        )
+
+        # Analyzer: connect + configure
+        yield step("connectAnalyzer")
+        spec = await ensure_analyzer_async()
+        yield step("configureAnalyzer", "start")
+        eff = await apply_analyzer_setup(
+            spec=spec,
+            center_hz=int(freq_hz),
+            setup=a_set,
+            analyzer_ref_offset_db=ref_off,
+        )
+
+        center_hz = eff.get("center_hz"); span_hz = eff.get("span_hz")
+        rbw_hz = eff.get("rbw_hz"); vbw_hz = eff.get("vbw_hz")
+        def mhz(x): 
+            try: return (float(x)/1e6)
+            except Exception: return 0.0
+
+        yield step(
+            "configureAnalyzer",
+            "done",
+            message=(
+                f"Analyzer center={mhz(center_hz):.3f} MHz "
+                f"span={mhz(span_hz):.3f} MHz "
+                + (f"RBW={rbw_hz} Hz " if rbw_hz is not None else "")
+                + (f"VBW={vbw_hz} Hz"   if vbw_hz is not None else "")
+            ).strip()
+        )
+        await asyncio.sleep(float(settle.get("after_center_s", delay)))
+
+        # =========================
+        # Mode A: SIMPLE CW
+        # =========================
+        if simple_cw:
+            yield step("connectDut", "start", message=f"DUT {mac}")
+            async with managed_ble(mac) as dut:
+                yield step("connectDut", "done")
+
+                # Clear any stale tone first (prevents -1 HwtpStatus on some builds)
+                try:
+                    await dut_call(dut, "_send_tone_stop_best_effort")
+                except Exception:
+                    pass
+
+                tone_ms = int(duration_s * 1000.0)
+                yield step(
+                    "toneStart", "start",
+                    message=f"Tone ch={channel} ({freq_hz/1e6:.3f}MHz) dur={tone_ms}ms offset={offset_hz}Hz"
+                )
+                # DLL-friendly START with STOP+fallbacks inside
+                await dut_call(
+                    dut, "ble_test_tone_start",
+                    channel=int(channel),
+                    duration_ms=tone_ms,
+                    offset_hz=int(offset_hz),
+                )
+                yield step("toneStart", "done")
+
+            # Let CW stabilize, then measure on spectrum
+            await asyncio.sleep(max(0.15, min(duration_s * 0.1, 0.5)))
+
+            yield step("measure", "start", message=f"peak_search('{marker}') → get_marker_power('{marker}')")
+            await spec_call(spec.peak_search, marker)
+            await asyncio.sleep(delay)
+            pow_str = await spec_call(spec.get_marker_power, marker)
+            measured = float(num(pow_str))
+            yield step("measure", "done", measuredDbm=measured)
+
+            # PASS/FAIL (only if limits provided)
+            if min_value is None and max_value is None:
+                passed = None
+            else:
+                lower_ok = True if min_value is None else (measured >= float(min_value))
+                upper_ok = True if max_value is None else (measured <= float(max_value))
+                passed = lower_ok and upper_ok
+
+            yield evt("result", measuredDbm=measured, pass_=passed)
+            yield evt("done", ok=True)
+            return
+
+        # =========================
+        # Mode B: FULL FLOW
+        # =========================
+        yield step("connectDut", "start", message=f"DUT {mac}")
+        async with managed_ble(mac) as dut:
+            yield step("connectDut", "done")
+
+            yield step("cwOn", "start", message=f"Set BLE TxPowerConst=0x{power_const:X}")
+            await dut_call(dut, "ble_tx_power_set", tx_power_const=int(power_const))
+            yield step("cwOn", "done")
+
+            yield step("saveReset", "start", message="Save settings & reset DUT (reconnect after)")
+            await dut_call(dut, "ble_save_and_reset")
+            yield step("saveReset", "done")
+
+        await asyncio.sleep(reset_wait_s)
+        for attempt in range(1, reconnect_attempts + 1):
+            try:
+                yield step("reconnectDut", "start", message=f"DUT {mac} (post-reset) — attempt {attempt}/{reconnect_attempts}")
+                async with managed_ble(mac) as dut:
+                    yield step("reconnectDut", "done", attempt=attempt)
+                    tone_ms = int(duration_s * 1000.0)
+                    yield step("toneStart", "start",
+                               message=f"Tone ch={channel} ({freq_hz/1e6:.3f}MHz) dur={tone_ms}ms offset={offset_hz}Hz")
+                    await dut_call(dut, "ble_test_tone_start",
+                                   channel=int(channel),
+                                   duration_ms=tone_ms,
+                                   offset_hz=int(offset_hz))
+                    yield step("toneStart", "done")
+                await asyncio.sleep(max(0.10, min(duration_s * 0.05, 0.30)))
+                break
+            except Exception as e:
+                yield step("reconnectDut", "error", message=f"Reconnect failed: {e!s}")
+                if attempt < reconnect_attempts:
+                    await asyncio.sleep(reconnect_backoff_s * (1.0 + 0.25 * (attempt - 1)))
+                else:
+                    raise RuntimeError(f"BLE reconnect failed after {reconnect_attempts} attempts: {e!s}") from e
+
+        yield step("measure", "start", message=f"peak_search('{marker}') → get_marker_power('{marker}')")
+        await spec_call(spec.peak_search, marker)
+        await asyncio.sleep(delay)
+        pow_str = await spec_call(spec.get_marker_power, marker)
+        measured = float(num(pow_str))
+        yield step("measure", "done", measuredDbm=measured)
+
+        if min_value is None and max_value is None:
+            passed = None
+        else:
+            lower_ok = True if min_value is None else (measured >= float(min_value))
+            upper_ok = True if max_value is None else (measured <= float(max_value))
+            passed = lower_ok and upper_ok
+
+        yield evt("result", measuredDbm=measured, pass_=passed)
+
+    except asyncio.CancelledError:
+        if spec is not None:
+            try:
+                await spec_call(spec.disconnect, timeout=3.0)
+            except Exception:
+                pass
+        raise
+    except Exception as e:
+        yield evt("error", error=str(e))
+    finally:
+        yield evt("done", ok=True)
+
+
+async def run_ble_tx_power(
+    *,
+    mac: str,
+    power_param_hex: str | int,
+    channel: int,
     min_value: Optional[float] = None,
     max_value: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Non-stream helper that runs BLE Tx Power and returns {"ok": True, "measuredDbm": ..., "pass": ...}.
-    Mirrors the structure used in tests_lora.py.
+    Convenience wrapper that returns the final result dict.
     """
     result: Dict[str, Any] | None = None
-    async for e in run_tx_power_stream(
-        freq_hz=freq_hz,
-        power_dbm=power_dbm,
+    async for e in run_ble_tx_power_stream(
         mac=mac,
+        power_param_hex=power_param_hex,
+        channel=channel,
         min_value=min_value,
         max_value=max_value,
     ):
         if e.get("type") == "result":
             result = e
     if result is None:
-        raise RuntimeError("No result produced by run_tx_power_stream")
+        raise RuntimeError("No result produced by run_ble_tx_power_stream")
     return {"ok": True, "measuredDbm": result.get("measuredDbm"), "pass": result.get("pass_")}
-
-
-# ========= Streaming SSE-friendly generator (matches LoRa step keys) =========
-
-async def run_tx_power_stream(
-    *,
-    freq_hz: int,
-    power_dbm: int,
-    mac: str,
-    min_value: Optional[float] = None,
-    max_value: Optional[float] = None,
-) -> AsyncGenerator[Dict, None]:
-    """
-    BLE Tx Power test flow (step keys identical to LoRa):
-      connectAnalyzer → configureAnalyzer → connectDut → cwOn → measure → cwOff → done
-
-    Steps:
-      1) Ensure spectrum analyzer and configure from YAML defaults (tests.ble_defaults.analyzer_setup).
-      2) Connect DUT (BLE).
-      3) Set BLE Tx Power (HWTP_SI_BLE_TX_POWER_SET) using dBm→const mapping.
-      4) Save & Reset (placeholder – no-ops until you provide method names).
-      5) Reconnect DUT.
-      6) Start BLE Test Tone (HWTP_EX_BLE_TEST_TONE_START) using tests.ble_tx_power {channel_map,duration_s,offset_hz}.
-      7) Measure peak on spectrum.
-      8) Report result; cwOff is UI-only (DLL handles tone/CW).
-    """
-    def step(key: str, status: str = "start", **extra):  # tiny helper for consistency
-        return evt("step", key=key, status=status, **extra)
-
-    marker = get_marker_name()
-    delay  = get_default_delay_s()
-    ref_off = get_global_analyzer_ref_offset_db()
-
-    # ------- YAML defaults -------
-    # analyzer setup: tests.ble_defaults.analyzer_setup
-    # tone settings:  tests.ble_tx_power.{channel_map, duration_s, offset_hz}
-    ble_defaults = get_test_config("ble_defaults") or {}
-    ble_tx_cfg   = get_test_config("ble_tx_power") or {}
-
-    setup = (ble_defaults.get("analyzer_setup") or {}) if isinstance(ble_defaults, dict) else {}
-    settle_after_power = float(ble_defaults.get("settle_after_power_set_s", 0.30)) if isinstance(ble_defaults, dict) else 0.30
-
-    tone_duration_s = float(ble_tx_cfg.get("duration_s", 5.0)) if isinstance(ble_tx_cfg, dict) else 5.0
-    tone_offset_hz  = int(ble_tx_cfg.get("offset_hz", 0)) if isinstance(ble_tx_cfg, dict) else 0
-
-    # Choose a channel: prefer 37 if present, else the first key in channel_map
-    channel_map = {}
-    if isinstance(ble_tx_cfg, dict):
-        cm = ble_tx_cfg.get("channel_map")
-        if isinstance(cm, dict):
-            # enforce int keys
-            channel_map = {int(k): int(v) for k, v in cm.items()}
-    channel = 37 if 37 in channel_map else (next(iter(channel_map.keys())) if channel_map else 37)
-
-    # Optional limits from YAML if UI didn’t supply
-    if min_value is None:
-        try: min_value = float((ble_tx_cfg.get("limits") or {}).get("min_dbm"))
-        except Exception: pass
-    if max_value is None:
-        try: max_value = float((ble_tx_cfg.get("limits") or {}).get("max_dbm"))
-        except Exception: pass
-
-    spec = None
-    try:
-        # Announce
-        yield evt("start", test="tx-power", params={
-            "protocol": "BLE",
-            "mac": mac,
-            "freq_hz": int(freq_hz),
-            "power_dbm": float(power_dbm),
-            "channel": int(channel),
-            "duration_s": tone_duration_s,
-            "offset_hz": tone_offset_hz,
-        })
-
-        # 1) Analyzer connect
-        yield step("connectAnalyzer", "start", message="Ensure analyzer is connected")
-        spec = await ensure_analyzer_async()
-        yield step("connectAnalyzer", "done", message="Analyzer connected")
-
-        # 2) Analyzer setup
-        yield step("configureAnalyzer", "start",
-                   message=f"Center={freq_hz} Hz, applying RBW/VBW/ref from YAML")
-        eff = await apply_analyzer_setup(
-            spec=spec,
-            center_hz=int(freq_hz),
-            setup=setup,
-            analyzer_ref_offset_db=ref_off,
-        )
-        yield step("configureAnalyzer", "done",
-                   message=f"Analyzer configured (span={eff.get('span_hz')} Hz, rbw={eff.get('rbw_hz')} Hz, "
-                           f"vbw={eff.get('vbw_hz')} Hz, ref={eff.get('ref_level_dbm')})")
-        await asyncio.sleep(delay)
-
-        # 3) First BLE connect
-        yield step("connectDut", "start", message=f"Connect BLE {mac}")
-        async with managed_ble(mac) as dut:
-            yield step("connectDut", "done", message="BLE connected")
-
-            # 4) Set BLE Tx Power (HWTP_SI_BLE_TX_POWER_SET)
-            yield step("cwOn", "start", message=f"Set BLE Tx Power → {power_dbm} dBm")
-            tx_power_const = _dbm_to_vendor_const(power_dbm)
-            await dut_call(dut, "ble_tx_power_set", tx_power_const)
-            await asyncio.sleep(settle_after_power)
-
-            # 5) Save & Reset — placeholder (fill in when commands known)
-            try:
-                # Example (uncomment & rename when you have the real methods):
-                # await dut_call(dut, "ble_save_settings")
-                # await dut_call(dut, "ble_reset")
-                await asyncio.sleep(1.0)  # simulate reboot pause
-            except Exception as e:
-                # Not fatal; we'll attempt reconnect regardless
-                yield evt("log", message=f"Save/Reset skipped/failed: {e}")
-
-        # 6) Reconnect after reset
-        yield step("connectDut", "start", message=f"Reconnect BLE {mac}")
-        async with managed_ble(mac) as dut2:
-            yield step("connectDut", "done", message="BLE reconnected")
-
-            # 7) Start BLE Test Tone (HWTP_EX_BLE_TEST_TONE_START)
-            yield evt("log", message=f"Start BLE test tone: ch={channel}, dur={tone_duration_s:.2f}s, "
-                                     f"offset={tone_offset_hz} Hz")
-            await dut_call(
-                dut2,
-                "ble_test_tone_start",
-                channel=int(channel),
-                duration_ms=int(tone_duration_s * 1000.0),
-                offset_hz=int(tone_offset_hz),
-            )
-            # DLL typically drops the BLE link for CW — report cwOn as done for the UI
-            yield step("cwOn", "done")
-
-            # 8) Measure on spectrum
-            yield step("measure", "start", message="Peak search & read marker power")
-            await spec_call(spec.peak_search, get_marker_name()); await asyncio.sleep(delay)
-
-            # Prefer explicit "get_marker_power" and parse
-            pow_str = await spec_call(spec.get_marker_power, get_marker_name())
-            measured = float(num(pow_str))
-
-            yield step("measure", "done", measuredDbm=measured)
-            yield evt("log", message=f"Measured: {measured:.2f} dBm")
-
-            # PASS/FAIL evaluation (optional)
-            if min_value is None and max_value is None:
-                passed = None
-            else:
-                lo_ok = True if min_value is None else (measured >= float(min_value))
-                hi_ok = True if max_value is None else (measured <= float(max_value))
-                passed = lo_ok and hi_ok
-
-            # cwOff — DLL controls the tone; nothing to send (UI polish only)
-            yield step("cwOff", "start", message="CW handled by DUT/DLL (no explicit OFF)")
-            yield step("cwOff", "done")
-
-            yield evt("result", measuredDbm=measured, pass_=passed)
-
-    except asyncio.CancelledError:
-        # Match LoRa fast-abort tidy behavior
-        if spec is not None:
-            asyncio.create_task(background_tidy_spectrum(spec))
-            try:
-                asyncio.create_task(spec_call(spec.disconnect, timeout=CLOSE_SPEC_TIMEOUT))
-            except Exception:
-                pass
-        raise
-    except Exception as e:
-        # Mark error and bubble details to UI log
-        yield evt("error", error=str(e))
-    finally:
-        yield evt("done", ok=True)
-
-
-# ========= Helpers =========
-
-def _dbm_to_vendor_const(power_dbm: float | int) -> int:
-    """
-    Map user dBm to vendor-specific constant expected by HWTP_BleTxPower_t(TxPowerConst=...).
-    Current convention: multiply by 100 (e.g., 23.0 dBm → 2300).
-    Adjust here if your DLL expects a different mapping.
-    """
-    return int(round(float(power_dbm) * 100.0))

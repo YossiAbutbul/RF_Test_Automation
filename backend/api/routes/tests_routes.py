@@ -1,3 +1,4 @@
+# backend/api/routes/tests_routes.py
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +8,7 @@ from typing import Optional, AsyncGenerator, Dict, Any
 from fastapi import APIRouter, HTTPException, Request, Query
 from sse_starlette.sse import EventSourceResponse
 
-# Compat shim to split implementations
+# Existing test runners (LoRa + LTE)
 from services.tests_runner import (
     # LoRa
     run_tx_power, run_tx_power_stream,
@@ -16,6 +17,9 @@ from services.tests_runner import (
     run_lte_tx_power, run_lte_tx_power_stream,
     run_lte_frequency_accuracy, run_lte_frequency_accuracy_stream,
 )
+
+# NEW: BLE Tx Power stream
+from services.tests_ble import run_ble_tx_power_stream
 
 router = APIRouter(prefix="/tests", tags=["tests"])
 
@@ -62,11 +66,58 @@ def _sse(gen: AsyncGenerator[Dict[str, Any], None], request: Request) -> EventSo
                 await gen.aclose()
             except Exception:
                 pass
+    # Disable buffering so SSE flushes continuously
     return EventSourceResponse(event_source(), headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-# -----------------------------
+
+# =============================
+# BLE — Tx Power (NEW)
+# =============================
+
+@router.get("/ble/tx_power/stream")
+async def api_ble_tx_power_stream_get(
+    request: Request,
+    mac: str = Query(..., description="DUT MAC, hex string (e.g. 80E1271FD8DD)"),
+    powerParamHex: str = Query(..., description="Tx power param (hex or decimal)"),
+    channel: int = Query(..., ge=0, le=39, description="DLL channel index (0..39, where 0=2402MHz)"),
+    minValue: Optional[float] = Query(None, description="Lower pass bound in dBm"),
+    maxValue: Optional[float] = Query(None, description="Upper pass bound in dBm"),
+):
+    mac = mac.strip()
+    if not mac:
+        raise HTTPException(status_code=422, detail="Missing 'mac'")
+    gen = run_ble_tx_power_stream(
+        mac=mac,
+        power_param_hex=powerParamHex,
+        channel=int(channel),
+        min_value=minValue,
+        max_value=maxValue,
+    )
+    return _sse(gen, request)
+
+@router.post("/ble/tx_power/stream")
+async def api_ble_tx_power_stream_post(request: Request):
+    body = await _json_body(request)
+    mac = str(body.get("mac", "")).strip()
+    if not mac:
+        raise HTTPException(status_code=422, detail="Missing 'mac'")
+    power_param = _first(body.get("powerParamHex"), body.get("power_param_hex"))
+    channel = body.get("channel")
+    if power_param is None or channel is None:
+        raise HTTPException(status_code=422, detail="Missing 'powerParamHex' and/or 'channel'")
+    gen = run_ble_tx_power_stream(
+        mac=mac,
+        power_param_hex=power_param,
+        channel=int(channel),
+        min_value=_first(body.get("minValue"), body.get("min_value")),
+        max_value=_first(body.get("maxValue"), body.get("max_value")),
+    )
+    return _sse(gen, request)
+
+
+# =============================
 # LoRa — Tx Power
-# -----------------------------
+# =============================
 
 @router.post("/tx-power")
 async def api_tx_power(body: Dict[str, Any]):
@@ -131,9 +182,10 @@ async def api_tx_power_stream_post(request: Request):
     )
     return _sse(gen, request)
 
-# -----------------------------
+
+# =============================
 # LoRa — Frequency Accuracy
-# -----------------------------
+# =============================
 
 @router.post("/frequency-accuracy")
 @router.post("/freq-accuracy")
@@ -196,9 +248,10 @@ async def api_frequency_accuracy_stream_post(request: Request):
     )
     return _sse(gen, request)
 
-# -----------------------------
+
+# =============================
 # LTE — Tx Power
-# -----------------------------
+# =============================
 
 @router.post("/lte-tx-power")
 async def api_lte_tx_power(body: Dict[str, Any]):
@@ -269,9 +322,10 @@ async def api_lte_tx_power_stream_post(request: Request):
     )
     return _sse(gen, request)
 
-# -----------------------------
+
+# =============================
 # LTE — Frequency Accuracy
-# -----------------------------
+# =============================
 
 @router.post("/lte-frequency-accuracy")
 @router.post("/lte-freq-accuracy")

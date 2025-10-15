@@ -105,21 +105,19 @@ tests:
 
   # ===== BLE: Tx Power =====
   ble_defaults:
-    analyzer_setup:
-      span_hz: 2000000
-      rbw_hz: 100000
-      vbw_hz: 300000
-      ref_level_dbm: 20.0
-      use_peak_detector: true
     settle_after_power_set_s: 0.30
     settle_after_test_tone_s: 0.50
 
   ble_tx_power:
-    # Channel table placeholder (index → frequency Hz).
-    # Extend later with actual BLE advertising/data channels.
-    channel_map:
-      37: 2402000000   # 2402 MHz
-      38: 2426000000   # 2426 MHz
-      39: 2480000000   # 2480 MHz
-    duration_s: 5      # default test tone duration
-    offset_hz: 0       # frequency offset (default 0, overridable)
+    simple_cw_mode: true        
+    duration_s: 5
+    offset_hz: 0
+    reconnect_attempts: 5
+    analyzer_setup:
+      span_hz: 5000000
+      rbw_hz: 100000
+      vbw_hz: 100000
+      ref_level_dbm: 0
+    settle:
+      after_center_s: 0.25
+  ble_channel_map: { "37": 2402000000, "38": 2426000000, "39": 2480000000 }
