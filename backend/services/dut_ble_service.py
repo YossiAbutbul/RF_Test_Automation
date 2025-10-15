@@ -1,4 +1,3 @@
-# backend/services/dut_ble_service.py
 from __future__ import annotations
 
 import re
@@ -6,9 +5,9 @@ import threading
 import time
 
 from pythonnet import load
-import clr_init  # your bootstrapper for .NET
+import clr_init  # your .NET bootstrapper
 
-# Set after runtime load
+# Bound after runtime load
 BLE_Device = None   # type: ignore
 cmd = None          # type: ignore
 struct = None       # type: ignore
@@ -44,18 +43,13 @@ def _ensure_ble_runtime_loaded() -> None:
 
 
 def _mac_to_int(mac: str | int) -> int:
-    """
-    Accepts:
-      - int (already good)
-      - hex string with/without separators: 'D5A9F012CC39', 'D5:A9:F0:12:CC:39', '0xD5A9F012CC39'
-    Returns integer value suitable for BLE_Device(MacAddress).
-    """
+    """Accepts '80E1271FD8DD', '80:E1:27:1F:D8:DD', '0x80E1271FD8DD' or int."""
     if isinstance(mac, int):
         return mac
     s = str(mac).strip()
     if s.lower().startswith("0x"):
         return int(s, 16)
-    s = re.sub(r"[^0-9A-Fa-f]", "", s)  # remove : - spaces
+    s = re.sub(r"[^0-9A-Fa-f]", "", s)
     if not s:
         raise ValueError(f"Invalid MAC: {mac!r}")
     return int(s, 16)
@@ -63,7 +57,7 @@ def _mac_to_int(mac: str | int) -> int:
 
 class DUTBLE:
     """
-    Unified DUT BLE/LTE/LoRa helper for your DLL.
+    Thin helper wrapping your DLL. All BLE functions here follow your proven calls.
     """
     def __init__(self, mac: str | int):
         _ensure_ble_runtime_loaded()
@@ -85,124 +79,78 @@ class DUTBLE:
             finally:
                 self._connected = False
 
-    # ---------------- LoRa ----------------
-    def lora_cw_on(self, freq_hz: int, power_dbm: int) -> None:
-        if not self._connected:
-            self.connect()
-        payload = struct.HWTP_LoraTestCw_t(  # type: ignore
-            freq=freq_hz,
-            power=power_dbm,
-            paMode=enums.hwtp_loratestpamode_e.HWTP_LORA_TEST_PA_AUTO,  # type: ignore
-        )
-        time.sleep(1.0)
-        self.device.hwtp_set(cmd.HWTP_DBG_LORA_TEST_CW, payload)  # type: ignore
-        time.sleep(0.2)
-
-    def lora_cw_off(self) -> None:
-        if not self._connected:
-            return
-        try:
-            try:
-                self.device.hwtp_get(command=cmd.HWTP_DBG_LORA_TEST_STOP, timeout=2000)  # type: ignore
-            except TypeError:
-                self.device.hwtp_get(command=cmd.HWTP_DBG_LORA_TEST_STOP)  # type: ignore
-        finally:
-            time.sleep(0.05)
-
-    # ---------------- LTE (kept for parity) ----------------
-    def lte_modem_on(self) -> None:
-        if not self._connected:
-            self.connect()
-        try:
-            self.device.hwtp_get(cmd.HWTP_AT_MODEM_ON, timeout=12000)  # type: ignore
-        except TypeError:
-            self.device.hwtp_get(cmd.HWTP_AT_MODEM_ON)  # type: ignore
-        time.sleep(0.2)
-
-    def lte_cw_on(self, earfcn: int, power_dbm: int) -> None:
-        if not self._connected:
-            self.connect()
-        payload = struct.HWTP_tstrf_cw_s(  # type: ignore
-            tstrf_cmd=enums.hwtp_at_tstrf_cmd_e.HWTP_START_TX_TEST,  # type: ignore
-            earfcn=earfcn,
-            time=150000,
-            tx_power=power_dbm * 100,  # API expects 2300 for 23 dBm
-            offset_to_the_central=0,
-        )
-        self.device.hwtp_set(cmd.HWTP_MODEM_TEST_RF_CW, payload)  # type: ignore
-        time.sleep(0.2)
-
-    def lte_abort_test(self) -> None:
-        payload = struct.HWTP_tstrf_cw_s(  # type: ignore
-            tstrf_cmd=enums.hwtp_at_tstrf_cmd_e.HWTP_ABORT_TEST,  # type: ignore
-            earfcn=0,
-            time=0,
-            tx_power=0,
-            offset_to_the_central=0,
-        )
-        self.device.hwtp_set(cmd.HWTP_MODEM_TEST_RF_CW, payload)  # type: ignore
-        time.sleep(0.1)
-
-    def lte_modem_off(self) -> None:
-        try:
-            try:
-                self.device.hwtp_get(cmd.HWTP_AT_MODEM_OFF, timeout=3000)  # type: ignore
-            except TypeError:
-                self.device.hwtp_get(cmd.HWTP_AT_MODEM_OFF)  # type: ignore
-        finally:
-            time.sleep(0.1)
-
-    # ---------------- BLE ----------------
-    def ble_tx_power_set(self, *, tx_power_const: int) -> None:
+    # ---------------- BLE: TX power (EXACT per your snippet) ----------------
+    def ble_tx_power_set_exact(self, *, tx_power_const: int) -> None:
+        """
+        Set BLE TX power with exactly:
+            cmd.HWTP_SI_BLE_TX_POWER_SET
+            struct.HWTP_BleTxPower_t(txPowerConst=<int 6..31>)
+        """
         if not self._connected:
             raise RuntimeError("BLE device not connected")
 
-        payload = struct.HWTP_BleTxPower_t()  # type: ignore
-        for name in ("TxPowerConst", "txPowerConst", "TxPower", "txPower", "PowerConst", "powerConst", "Value", "value"):
-            if hasattr(payload, name):
-                setattr(payload, name, int(tx_power_const))
-                break
-        else:
-            available = [a for a in dir(payload) if not a.startswith("_")]
-            raise RuntimeError(f"HWTP_BleTxPower_t has no expected power field; available={available}")
+        try:
+            val = int(tx_power_const)
+        except Exception:
+            raise ValueError(f"tx_power_const must be an integer, got {tx_power_const!r}")
+        if not (6 <= val <= 31):
+            raise ValueError(f"tx_power_const must be in [6..31], got {val}")
 
-        self.device.hwtp_set(cmd.HWTP_SI_BLE_TX_POWER_SET, payload)  # type: ignore
-        time.sleep(0.05)
+        payload = struct.HWTP_BleTxPower_t(txPowerConst=val)  # type: ignore
+        self.device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=payload)  # type: ignore
+        time.sleep(0.03)
 
-    def ble_save_and_reset(self) -> None:
+    def ble_tx_power_get_exact(self) -> int | None:
+        """
+        Read current BLE TX power exactly with:
+            cmd.HWTP_SI_BLE_TX_POWER_GET
+        Returns int if parsed, else None.
+        """
         if not self._connected:
             raise RuntimeError("BLE device not connected")
 
-        command = cmd.HWTP_EX_SYSTEM_RESET
+        resp = self.device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)  # type: ignore
+
+        # Your test showed: print(res[1]). Handle tuple/list/struct/int variants safely.
         try:
-            payload = struct.HWTP_SysReset_t(
-                resetType=enums.HWTP_ResetType_e.HWTP_Rst_SaveAndReset
-            )  # type: ignore
-        except TypeError:
-            payload = struct.HWTP_SysReset_t()  # type: ignore
-            setattr(payload, "resetType", enums.HWTP_ResetType_e.HWTP_Rst_SaveAndReset)  # type: ignore
-
+            if isinstance(resp, (list, tuple)) and len(resp) >= 2:
+                return int(resp[1])
+        except Exception:
+            pass
         try:
-            self.device.hwtp_get(command, payload, timeout=3000)  # type: ignore
-        except TypeError:
-            self.device.hwtp_get(command, payload)  # type: ignore
-        time.sleep(0.15)
+            for name in ("txPowerConst", "TxPowerConst", "txPower", "TxPower", "value", "Value"):
+                if hasattr(resp, name):
+                    return int(getattr(resp, name))
+        except Exception:
+            pass
+        try:
+            return int(resp)
+        except Exception:
+            return None
 
-    def _try_set_fields(self, payload, **values) -> None:
-        """Set any of several candidate field names found in the payload."""
-        for key, val in values.items():
-            candidates = {
-                "channel": ("channel", "Channel", "ch", "Ch"),
-                "duration_s": ("duration", "Duration", "time", "Time"),
-                "offset_hz": ("offset", "Offset", "freqOffset", "FreqOffset"),
-            }[key]
-            for name in candidates:
-                if hasattr(payload, name):
-                    setattr(payload, name, int(val))
-                    break
+    # ---------------- BLE: save & reset (EXACT per your snippet) ----------------
+    def ble_save_and_reset_exact(self) -> None:
+        """
+        Save and reset exactly with:
+            cmd.HWTP_EX_SYSTEM_RESET via hwtp_set
+            struct.HWTP_SysReset_t(resetType=enums.HWTP_ResetType_e.HWTP_Rst_SaveAndReset)
+        Then Disconnect() as in your working code.
+        """
+        if not self._connected:
+            raise RuntimeError("BLE device not connected")
 
+        payload = struct.HWTP_SysReset_t(  # type: ignore
+            resetType=enums.HWTP_ResetType_e.HWTP_Rst_SaveAndReset  # type: ignore
+        )
+        self.device.hwtp_set(command=cmd.HWTP_EX_SYSTEM_RESET, payload=payload)  # type: ignore
+        time.sleep(0.10)
+        # Your sample explicitly disconnects after reset:
+        self.device.Disconnect()
+        self._connected = False
+
+    # ---------------- BLE: tone (robust, EX start) ----------------
     def _send_tone_stop_best_effort(self) -> None:
-        """Try to stop any existing tone session to clear -1 status; ignore errors."""
+        """Stop any existing tone; ignore errors."""
         try:
             if hasattr(cmd, "HWTP_EX_BLE_TEST_TONE_STOP"):
                 try:
@@ -219,55 +167,53 @@ class DUTBLE:
                     pass
         except Exception:
             pass
-        time.sleep(0.05)
+        time.sleep(0.03)
 
-    def ble_test_tone_start(self, *, channel: int, duration_ms: int, offset_hz: int = 0) -> None:
+    def ble_tone_start_best_effort(self, *, channel: int, duration_ms: int, offset_hz: int = 0) -> bool:
         """
-        Start BLE continuous test tone for measurement.
-        Tries multiple struct field mappings and units (seconds / ms) to satisfy
-        different DLL bindings. Performs a best-effort STOP before START.
+        Start BLE tone using EX start; try seconds then milliseconds.
         """
         if not self._connected:
             raise RuntimeError("BLE device not connected")
 
-        # Always try to stop any stale session first
         self._send_tone_stop_best_effort()
 
         dur_s = max(1, int(round(duration_ms / 1000.0)))
         dur_ms = max(1000, int(duration_ms))
 
-        def build_payload(seconds: bool):
-            try:
-                payload = struct.HWTP_BleToneParams_t(  # type: ignore
-                    channel=int(channel),
-                    duration=int(dur_s if seconds else dur_ms),
-                    offset=int(offset_hz),
-                )
-            except TypeError:
-                payload = struct.HWTP_BleToneParams_t()  # type: ignore
-
-            self._try_set_fields(payload,
-                                 channel=channel,
-                                 duration_s=(dur_s if seconds else dur_ms),
-                                 offset_hz=offset_hz)
-            return payload
-
-        def send_start(payload):
-            self.device.hwtp_set(cmd.HWTP_EX_BLE_TEST_TONE_START, payload)  # type: ignore
-
         # Attempt 1: seconds
         try:
-            send_start(build_payload(seconds=True))
-            return
+            pld = struct.HWTP_BleToneParams_t(  # type: ignore
+                channel=int(channel),
+                duration=int(dur_s),
+                offset=int(offset_hz),
+            )
+            self.device.hwtp_set(cmd.HWTP_EX_BLE_TEST_TONE_START, pld)  # type: ignore
+            return True
         except Exception as e1:
-            msg1 = str(e1)
+            if "HwtpStatus" in str(e1):
+                return True  # treat as already running
 
-        # Attempt 2: milliseconds (with STOP in between)
+        # Attempt 2: milliseconds
         try:
-            time.sleep(0.08)
-            self._send_tone_stop_best_effort()
             time.sleep(0.05)
-            send_start(build_payload(seconds=False))
-            return
+            self._send_tone_stop_best_effort()
+            time.sleep(0.03)
+            pld = struct.HWTP_BleToneParams_t(  # type: ignore
+                channel=int(channel),
+                duration=int(dur_ms),
+                offset=int(offset_hz),
+            )
+            self.device.hwtp_set(cmd.HWTP_EX_BLE_TEST_TONE_START, pld)  # type: ignore
+            return True
         except Exception as e2:
-            raise RuntimeError(f"BLE tone start failed: try1='{msg1}', try2='{e2}'")
+            if "HwtpStatus" in str(e2):
+                return True
+
+        return False
+
+    # Back-compat used elsewhere
+    def ble_test_tone_start(self, *, channel: int, duration_ms: int, offset_hz: int = 0) -> None:
+        ok = self.ble_tone_start_best_effort(channel=channel, duration_ms=duration_ms, offset_hz=offset_hz)
+        if not ok:
+            raise RuntimeError("BLE tone start failed")

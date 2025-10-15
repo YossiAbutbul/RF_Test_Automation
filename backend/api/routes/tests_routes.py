@@ -77,21 +77,20 @@ def _sse(gen: AsyncGenerator[Dict[str, Any], None], request: Request) -> EventSo
 @router.get("/ble/tx_power/stream")
 async def api_ble_tx_power_stream_get(
     request: Request,
-    mac: str = Query(..., description="DUT MAC, hex string (e.g. 80E1271FD8DD)"),
-    powerParamHex: str = Query(..., description="Tx power param (hex or decimal)"),
-    channel: int = Query(..., ge=0, le=39, description="DLL channel index (0..39, where 0=2402MHz)"),
-    minValue: Optional[float] = Query(None, description="Lower pass bound in dBm"),
-    maxValue: Optional[float] = Query(None, description="Upper pass bound in dBm"),
+    mac: str = Query(...),
+    powerParamHex: str = Query(...),    # plain int 6..31 (name kept for compat)
+    channel: int = Query(..., ge=0, le=39),
+    minValue: Optional[float] = Query(None),
+    maxValue: Optional[float] = Query(None),
+    simpleCwMode: Optional[bool] = Query(None),
 ):
-    mac = mac.strip()
-    if not mac:
-        raise HTTPException(status_code=422, detail="Missing 'mac'")
     gen = run_ble_tx_power_stream(
-        mac=mac,
+        mac=mac.strip(),
         power_param_hex=powerParamHex,
         channel=int(channel),
         min_value=minValue,
         max_value=maxValue,
+        simple_cw_mode=simpleCwMode,
     )
     return _sse(gen, request)
 
@@ -101,16 +100,13 @@ async def api_ble_tx_power_stream_post(request: Request):
     mac = str(body.get("mac", "")).strip()
     if not mac:
         raise HTTPException(status_code=422, detail="Missing 'mac'")
-    power_param = _first(body.get("powerParamHex"), body.get("power_param_hex"))
-    channel = body.get("channel")
-    if power_param is None or channel is None:
-        raise HTTPException(status_code=422, detail="Missing 'powerParamHex' and/or 'channel'")
     gen = run_ble_tx_power_stream(
         mac=mac,
-        power_param_hex=power_param,
-        channel=int(channel),
+        power_param_hex=_first(body.get("powerParamHex"), body.get("power_param_hex")),
+        channel=int(body.get("channel")),
         min_value=_first(body.get("minValue"), body.get("min_value")),
         max_value=_first(body.get("maxValue"), body.get("max_value")),
+        simple_cw_mode=_first(body.get("simpleCwMode"), body.get("simple_cw_mode")),
     )
     return _sse(gen, request)
 

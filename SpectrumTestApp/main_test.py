@@ -99,6 +99,23 @@ def ble_cw(device: BLE_Device, channel):
     )
     device.hwtp_set(commands, payload)
 
+def change_ble_power(device: BLE_Device):
+    commands = cmd.HWTP_SI_BLE_TX_POWER_SET
+    payload = struct.HWTP_BleTxPower_t(
+        txPowerConst=25
+    )
+    device.hwtp_set(commands, payload)
+
+def get_ble_power(device: BLE_Device):
+    commands = cmd.HWTP_SI_BLE_TX_POWER_GET
+    device.hwtp_get(commands)
+
+def save_and_reset(device: BLE_Device):
+    commnad = cmd.HWTP_EX_SYSTEM_RESET
+    payload = struct.HWTP_SysReset_t(resetType=enums.HWTP_ResetType_e.HWTP_Rst_SaveAndReset)
+    device.hwtp_set(command=commnad, payload=payload)
+    device.Disconnect()
+
 def main():
     # mac_input = input("Please enter MAC Address:\n")
     # mac_address = parse_mac_to_hex(mac_input.strip())
@@ -107,7 +124,19 @@ def main():
     device = BLE_Device(0x80E1271FD8DD)
     device.Connect()
 
-    ble_cw(device=device, channel=0)
+    # ble_cw(device=device, channel=0)
+    res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
+    print(res[1])
+
+    device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=31))
+    save_and_reset(device=device)
+    
+    device = BLE_Device(0x80E1271FD8DD)
+    device.Connect()
+
+    res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
+    print(res[1])
+
     device.Disconnect()
 
     # analyzer = SpectrumAnalyzer(ip_address="172.16.10.1")
