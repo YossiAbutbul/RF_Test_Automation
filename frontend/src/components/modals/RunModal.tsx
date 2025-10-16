@@ -24,16 +24,18 @@ export default function RunModal(props: Props) {
   const { protocol } = props;
 
   if (protocol === "BLE") {
-    // BLE: separate modal, no backend wire, Power Parameter (hex)
+    // BLE: now supports both txPower and freqAccuracy (same as LoRa style)
     return (
       <BleRunModal
         open={props.open}
         onClose={props.onClose}
+        mode={props.mode ?? "txPower"}
         defaultMac={props.defaultMac ?? "80E1271FD8DD"}
         defaultFreqHz={props.defaultFreqHz ?? 2_402_000_000}
         defaultPowerParamHex={props.bleDefaultPowerParamHex ?? "31"}
         minValue={props.minValue ?? null}
         maxValue={props.maxValue ?? null}
+        defaultPpmLimit={props.defaultPpmLimit ?? 20}
       />
     );
   }
