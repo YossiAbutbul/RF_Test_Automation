@@ -110,9 +110,11 @@ tests:
 
   ble_tx_power:
     simple_cw_mode: true        
-    duration_s: 5
+    duration_s: 6.0
+    tone_settle_s: 0.30
+    measure_settle_s: 0.12
     offset_hz: 0
-    reconnect_attempts: 5
+    reconnect_attempts: 2
     analyzer_setup:
       span_hz: 5000000
       rbw_hz: 100000

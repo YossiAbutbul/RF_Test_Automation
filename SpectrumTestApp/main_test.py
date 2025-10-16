@@ -128,14 +128,16 @@ def main():
     res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
     print(res[1])
 
-    device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=31))
+    device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=25))
     save_and_reset(device=device)
     
     device = BLE_Device(0x80E1271FD8DD)
     device.Connect()
 
     res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
-    print(res[1])
+    # if str(res[1]) 
+    print(str(res[1]))
+
 
     device.Disconnect()
 
