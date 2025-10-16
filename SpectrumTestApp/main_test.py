@@ -124,22 +124,19 @@ def main():
     device = BLE_Device(0x80E1271FD8DD)
     device.Connect()
 
-    cat_m_modem_om(device=device)
-    cat_m_cw_on(device, earfcn=18900, power=2300)
-
     # ble_cw(device=device, channel=0)
-    # res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
-    # print(res[1])
+    res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
+    print(res[1])
 
-    # device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=25))
-    # save_and_reset(device=device)
+    device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=25))
+    save_and_reset(device=device)
     
-    # device = BLE_Device(0x80E1271FD8DD)
-    # device.Connect()
+    device = BLE_Device(0x80E1271FD8DD)
+    device.Connect()
 
-    # res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
-    # # if str(res[1]) 
-    # print(str(res[1]))
+    res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
+    # if str(res[1]) 
+    print(str(res[1]))
 
 
     device.Disconnect()
@@ -152,7 +149,8 @@ def main():
 
     # time.sleep(2)
     # lora_cw(device=device, spectrum=analyzer, frequency=918000000, power=0, ref_offset=20)
-    
+    # cat_m_modem_om(device=device)
+    # cat_m_cw_on(device, earfcn=18900, power=2300)
     
     # time.sleep(2)
     # cat_m_abort_test(device=device)
