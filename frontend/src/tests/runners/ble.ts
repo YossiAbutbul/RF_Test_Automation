@@ -1,50 +1,79 @@
-// === BLE: Tx Power (SSE) =====================================================
-
-import type { AnyEvt } from "./types";
-
-type Handlers = {
-  onStart?: (e: AnyEvt) => void;
-  onStep?: (e: AnyEvt) => void;
-  onLog?: (e: AnyEvt) => void;
-  onResult?: (e: AnyEvt) => void;
-  onError?: (e: AnyEvt) => void;
-  onDone?: (e: AnyEvt) => void;
+export type RunBLETxPowerParams = {
+  mac: string;
+  powerParamHex: string | number;  // send a plain int 6..31
+  channel: number;                 // 0..39 (0 => 2402 MHz)
+  minValue?: number;
+  maxValue?: number;
+  simpleCwMode?: boolean;          // true = tone only (no set/reset/verify)
 };
 
-function _bindStandardHandlers(es: EventSource, handlers: Handlers) {
-  es.addEventListener("start",  (ev) => handlers.onStart?.(JSON.parse((ev as MessageEvent).data)));
-  es.addEventListener("step",   (ev) => handlers.onStep?.(JSON.parse((ev as MessageEvent).data)));
-  es.addEventListener("log",    (ev) => handlers.onLog?.(JSON.parse((ev as MessageEvent).data)));
-  es.addEventListener("result", (ev) => handlers.onResult?.(JSON.parse((ev as MessageEvent).data)));
-  es.addEventListener("error",  (ev) => handlers.onError?.(JSON.parse((ev as MessageEvent).data)));
-  es.addEventListener("done",   (ev) => handlers.onDone?.(JSON.parse((ev as MessageEvent).data)));
+export type RunHandlers = {
+  onStart?: (e: any) => void;
+  onStep?: (e: any) => void;
+  onLog?: (e: any) => void;
+  onResult?: (e: any) => void;
+  onError?: (e: any) => void;
+  onDone?: (e: any) => void;
+};
+
+const API_PREFIX = (import.meta as any)?.env?.VITE_API_PREFIX ?? "";
+const BLE_TX_POWER_STREAM_PATH = "/tests/ble/tx_power/stream";
+
+function qs(params: Record<string, unknown>): string {
+  const u = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    u.append(k, String(v));
+  });
+  return u.toString();
 }
 
-export type BLETxPowerParams = {
-  mac: string;
-  freqHz: number;
-  powerDbm: number;
-  minValue?: number | null;
-  maxValue?: number | null;
-};
+function safeJSON(data: string | null): any {
+  if (!data) return {};
+  try { return JSON.parse(data); } catch { return { raw: data }; }
+}
 
-/**
- * Open an SSE stream to the backend BLE Tx Power test.
- * Backend route: GET /tests/ble/tx-power/stream
- */
-export function runBLETxPower(
-  { mac, freqHz, powerDbm, minValue = null, maxValue = null }: BLETxPowerParams,
-  handlers: Handlers
-): EventSource {
-  const qs = new URLSearchParams({
-    mac: mac.trim(),
-    freq_hz: String(freqHz),
-    power_dbm: String(powerDbm),
+export function runBLETxPower(params: RunBLETxPowerParams, handlers: RunHandlers = {}): EventSource {
+  const url =
+    API_PREFIX +
+    BLE_TX_POWER_STREAM_PATH +
+    "?" +
+    qs({
+      mac: params.mac,
+      powerParamHex: params.powerParamHex,
+      channel: params.channel,
+      minValue: params.minValue,
+      maxValue: params.maxValue,
+      simpleCwMode: params.simpleCwMode,
+    });
+
+  const es = new EventSource(url, { withCredentials: false } as any);
+
+  const call = (fn: ((e: any) => void) | undefined, payload: any) => { try { fn?.(payload); } catch {} };
+
+  es.addEventListener("start",  (ev) => call(handlers.onStart,  safeJSON((ev as MessageEvent).data)));
+  es.addEventListener("step",   (ev) => call(handlers.onStep,   safeJSON((ev as MessageEvent).data)));
+  es.addEventListener("log",    (ev) => call(handlers.onLog,    safeJSON((ev as MessageEvent).data)));
+  es.addEventListener("result", (ev) => call(handlers.onResult, safeJSON((ev as MessageEvent).data)));
+  es.addEventListener("error",  (ev) => {
+    const data = (ev as MessageEvent).data ? safeJSON((ev as MessageEvent).data) : { error: "stream error" };
+    call(handlers.onError, data);
   });
-  if (minValue != null) qs.set("min_value", String(minValue));
-  if (maxValue != null) qs.set("max_value", String(maxValue));
+  es.addEventListener("done",   (ev) => call(handlers.onDone,   safeJSON((ev as MessageEvent).data)));
 
-  const es = new EventSource(`/tests/ble/tx-power/stream?${qs.toString()}`);
-  _bindStandardHandlers(es, handlers);
+  es.onmessage = (ev) => {
+    const payload = safeJSON(ev.data);
+    const t = (payload.type || "").toString().toLowerCase();
+    switch (t) {
+      case "start":  return call(handlers.onStart, payload);
+      case "step":   return call(handlers.onStep, payload);
+      case "log":    return call(handlers.onLog, payload);
+      case "result": return call(handlers.onResult, payload);
+      case "error":  return call(handlers.onError, payload);
+      case "done":   return call(handlers.onDone, payload);
+    }
+  };
+  es.onerror = () => call(handlers.onError, { error: "stream error" });
+
   return es;
 }

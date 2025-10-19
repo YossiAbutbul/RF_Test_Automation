@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { CheckCircle, Circle, Loader2, XCircle } from "lucide-react";
+import { BLE } from "@/tests/runners"; // your SSE helper should export BLE.runBLETxPower()
 import "../css/RunModal.css";
 
 type StepKey =
@@ -7,8 +8,10 @@ type StepKey =
   | "configureAnalyzer"
   | "connectDut"
   | "cwOn"
+  | "saveReset"
+  | "reconnectDut"
+  | "toneStart"
   | "measure"
-  | "cwOff"
   | "close";
 type StepStatus = "idle" | "doing" | "done" | "error";
 
@@ -16,23 +19,44 @@ const LABEL: Record<StepKey, string> = {
   connectAnalyzer: "Connect to spectrum analyzer",
   configureAnalyzer: "Configure analyzer",
   connectDut: "Connect to DUT (BLE)",
-  cwOn: "Send BLE command(s)",
+  cwOn: "Set BLE Power Parameter",
+  saveReset: "Save & Reset DUT",
+  reconnectDut: "Reconnect to DUT",
+  toneStart: "Start BLE Test Tone",
   measure: "Measure from spectrum",
-  cwOff: "Turn off CW",
   close: "Close sessions",
 };
 
-const ORDER: StepKey[] = ["connectAnalyzer", "configureAnalyzer", "connectDut", "cwOn", "measure", "cwOff", "close"];
+const ORDER: StepKey[] = [
+  "connectAnalyzer",
+  "configureAnalyzer",
+  "connectDut",
+  "cwOn",
+  "saveReset",
+  "reconnectDut",
+  "toneStart",
+  "measure",
+  "close",
+];
+
 const initSteps = (): Record<StepKey, StepStatus> =>
   ORDER.reduce((a, k) => ((a[k] = k === "connectAnalyzer" ? "doing" : "idle"), a), {} as Record<StepKey, StepStatus>);
+
+/** Map frequency (Hz) to DLL channel: ch = round((f - 2402 MHz)/2 MHz), clamped 0..39 */
+function deriveBleChannel(freqHz: number | undefined | null): number {
+  const f = Number(freqHz ?? 0);
+  if (!Number.isFinite(f) || f <= 0) return 0; // default to ch 0 (2402 MHz)
+  const ch = Math.round((f - 2_402_000_000) / 2_000_000);
+  return Math.max(0, Math.min(39, ch));
+}
 
 type Props = {
   open: boolean;
   onClose: () => void;
 
   defaultMac?: string;
-  defaultFreqHz?: number;        // 2402 MHz default
-  defaultPowerParamHex?: string; // hex string e.g., "0x1F"
+  defaultFreqHz?: number;         // UI value to derive 'channel' for backend
+  defaultPowerParamHex?: string;  // e.g., "0x1F"
 
   minValue?: number | null;
   maxValue?: number | null;
@@ -42,28 +66,46 @@ export default function BleRunModal({
   open,
   onClose,
   defaultMac = "80E1271FD8DD",
-  defaultFreqHz = 2402000000,
+  defaultFreqHz = 2_402_000_000,       // 2402 MHz → ch 0
   defaultPowerParamHex = "0x1F",
   minValue = null,
   maxValue = null,
 }: Props) {
+  // Inputs shown to user
   const [mac, setMac] = useState(defaultMac);
   const [freqHz, setFreqHz] = useState(defaultFreqHz);
   const [powerParam, setPowerParam] = useState(defaultPowerParamHex);
 
+  // Derived channel (sent to backend). Updated whenever freqHz changes.
+  const channel = useMemo(() => deriveBleChannel(freqHz), [freqHz]);
+
+  // Run state
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<Record<StepKey, StepStatus>>(initSteps);
   const [logs, setLogs] = useState<string[]>([]);
   const [measuredDbm, setMeasuredDbm] = useState<number | undefined>(undefined);
   const [passed, setPassed] = useState<boolean | undefined>(undefined);
 
+  // SSE handle
+  const esRef = useRef<EventSource | null>(null);
+
+  // log autoscroll
   const logRef = useRef<HTMLPreElement | null>(null);
-  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [logs]);
-  useEffect(() => { if (!open) reset(); }, [open]); // eslint-disable-line
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [logs]);
 
-  const pushLog = (line: string) => setLogs((p) => [...p, `[${new Date().toLocaleTimeString()}] ${line}`]);
+  // reset on close
+  useEffect(() => {
+    if (!open) resetModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  const reset = () => {
+  const pushLog = (line: string) =>
+    setLogs((p) => [...p, `[${new Date().toLocaleTimeString()}] ${line}`]);
+
+  // Full modal reset (used when modal closes)
+  const resetModal = () => {
     setRunning(false);
     setSteps(initSteps());
     setLogs([]);
@@ -72,13 +114,28 @@ export default function BleRunModal({
     setMac(defaultMac);
     setFreqHz(defaultFreqHz);
     setPowerParam(defaultPowerParamHex);
+    esRef.current?.close();
+    esRef.current = null;
+  };
+
+  // Light clear for a new run (DO NOT reset inputs)
+  const clearForRun = () => {
+    setSteps(initSteps());
+    setLogs([]);
+    setMeasuredDbm(undefined);
+    setPassed(undefined);
+    esRef.current?.close();
+    esRef.current = null;
   };
 
   const setStepSeq = (key: StepKey, status: StepStatus) =>
     setSteps((prev) => {
       const next = { ...prev };
       if (status === "doing") {
-        for (const k of ORDER) { if (k === key) break; if (next[k] === "doing") next[k] = "done"; }
+        for (const k of ORDER) {
+          if (k === key) break;
+          if (next[k] === "doing") next[k] = "done";
+        }
       }
       next[key] = status;
       return next;
@@ -89,49 +146,102 @@ export default function BleRunModal({
     if (existing.length >= 6) return existing;
     const typed = window.prompt("Enter DUT MAC (hex, e.g. 80E1271FD8DD):", existing) || "";
     const clean = typed.trim();
-    if (clean.length >= 6) { setMac(clean); return clean; }
+    if (clean.length >= 6) {
+      setMac(clean);
+      return clean;
+    }
     return null;
   };
 
   const start = () => {
     if (running) return;
-    const macOk = ensureMac(); if (!macOk) return;
 
-    const hex = powerParam.trim();
-    const isHex = /^0x[0-9a-fA-F]+$/.test(hex) || /^[0-9a-fA-F]+$/.test(hex);
-    if (!isHex) { pushLog('Invalid "Power Parameter". Use hex like 0x1F or 1F.'); return; }
+    const macOk = ensureMac();
+    if (!macOk) return;
 
-    reset(); setRunning(true);
-    pushLog("Starting BLE Tx Power (UI-only; backend wiring later)…");
+    const hex = (powerParam || "").trim();
+    const isHex = /^0x[0-9a-fA-F]+$/.test(hex) || /^[0-9a-fA-F]+$/.test(hex) || /^\d+$/.test(hex);
+    if (!isHex) {
+      pushLog('Invalid "Power Parameter". Use hex like 0x1F or 1F (or a decimal integer).');
+      return;
+    }
 
-    const simulate = async () => {
-      try {
-        setStepSeq("connectAnalyzer", "doing"); await new Promise((r) => setTimeout(r, 250)); setStepSeq("connectAnalyzer", "done");
-        setStepSeq("configureAnalyzer", "doing"); await new Promise((r) => setTimeout(r, 250)); setStepSeq("configureAnalyzer", "done");
-        setStepSeq("connectDut", "doing"); await new Promise((r) => setTimeout(r, 300)); setStepSeq("connectDut", "done");
+    clearForRun();
+    setRunning(true);
+    pushLog(`Starting BLE Tx Power… (MAC=${macOk}, ch=${channel}, param=${powerParam})`);
 
-        setStepSeq("cwOn", "doing");
-        pushLog(`Would send BLE Power Parameter=${powerParam}, Freq=${freqHz} Hz`);
-        await new Promise((r) => setTimeout(r, 350)); setStepSeq("cwOn", "done");
-
-        setStepSeq("measure", "doing"); await new Promise((r) => setTimeout(r, 300)); setStepSeq("measure", "done");
-        setStepSeq("cwOff", "doing"); await new Promise((r) => setTimeout(r, 200)); setStepSeq("cwOff", "done");
-
-        setMeasuredDbm(undefined);
-        if (minValue == null && maxValue == null) setPassed(undefined); else setPassed(true);
-
+    const handlers = {
+      onStart: (_e: any) => pushLog("Run started"),
+      onStep: (e: any) => {
+        const key = (e?.key as StepKey | undefined) || undefined;
+        if (key && ORDER.includes(key)) {
+          const raw = e?.status;
+          const status: StepStatus = raw === "error" ? "error" : raw === "done" ? "done" : "doing";
+          setStepSeq(key, status);
+        }
+        if (e?.message) pushLog(e.message);
+        if (typeof e?.measuredDbm === "number") setMeasuredDbm(e.measuredDbm);
+      },
+      onLog: (e: any) => { if (e?.message) pushLog(e.message); },
+      onResult: (e: any) => {
+        setSteps((prev) => {
+          const next = { ...prev };
+          ORDER.forEach((k) => { if (next[k] === "doing") next[k] = "done"; });
+          return next;
+        });
+        if (typeof e?.measuredDbm === "number") setMeasuredDbm(e.measuredDbm);
+        if ("pass_" in e) setPassed(e.pass_);
+        pushLog("Measurement complete.");
+      },
+      onError: (e: any) => {
+        setSteps((prev) => {
+          const next = { ...prev };
+          let marked = false;
+          for (const k of ORDER) {
+            if (!marked && next[k] === "doing") {
+              next[k] = "error";
+              marked = true;
+            }
+          }
+          return next;
+        });
+        pushLog(`Error: ${String(e?.error || "stream error")}`);
+        esRef.current?.close();
+        esRef.current = null;
         setRunning(false);
-        setSteps((prev) => ({ ...prev, close: "done" }));
-        pushLog("Done (UI only).");
-      } catch (e) {
-        pushLog(`Error: ${String(e)}`);
+      },
+      onDone: (_e: any) => {
+        setSteps((prev) => {
+          const next = { ...prev };
+          ORDER.forEach((k) => { if (next[k] === "doing") next[k] = "done"; });
+        next.close = "done";
+          return next;
+        });
         setRunning(false);
-      }
+        esRef.current?.close();
+        esRef.current = null;
+      },
     };
-    void simulate();
+
+    // Open stream. Backend expects { mac, powerParamHex, channel, minValue?, maxValue? }
+    const es = BLE.runBLETxPower(
+      {
+        mac: macOk,
+        powerParamHex: powerParam,
+        channel,                           // derived from freqHz (DLL scheme)
+        minValue: minValue ?? undefined,
+        maxValue: maxValue ?? undefined,
+      },
+      handlers
+    );
+
+    setStepSeq("connectAnalyzer", "doing");
+    esRef.current = es;
   };
 
   const abort = () => {
+    esRef.current?.close();
+    esRef.current = null;
     setRunning(false);
     setStepSeq("close", "done");
     pushLog("Aborted by user.");
@@ -145,62 +255,118 @@ export default function BleRunModal({
       <div className={`tsq-modal ${running ? "is-running" : ""}`}>
         <div className="tsq-run-header">
           {running && <div className="tsq-spinner" />}
-          <div className="tsq-modal-title">Run BLE Tx Power (Local)</div>
+          <div className="tsq-modal-title">Run BLE Tx Power</div>
         </div>
 
         <div className="tsq-run-form txpower-grid">
           <label className="tsq-field">
             <span>MAC</span>
-            <input className={`tsq-input${mac.trim().length < 6 ? " tsq-mac-warn" : ""}`} value={mac} onChange={(e) => setMac(e.target.value)} disabled={running} />
+            <input
+              className={`tsq-input${mac.trim().length < 6 ? " tsq-mac-warn" : ""}`}
+              value={mac}
+              onChange={(e) => setMac(e.target.value)}
+              disabled={running}
+            />
           </label>
 
           <label className="tsq-field">
             <span>Frequency [Hz]</span>
-            <input className="tsq-input" type="number" value={freqHz} onChange={(e) => setFreqHz(Number(e.target.value))} disabled={running} />
+            <input
+              className="tsq-input"
+              type="number"
+              value={freqHz}
+              onChange={(e) => setFreqHz(Number(e.target.value))}
+              disabled={running}
+            />
+            {/* Derived channel: {channel} */}
           </label>
 
           <label className="tsq-field">
             <span>Power Parameter (hex)</span>
-            <input className="tsq-input" value={powerParam} onChange={(e) => setPowerParam(e.target.value)} placeholder="e.g. 0x1F or 1F" disabled={running} />
+            <input
+              className="tsq-input"
+              value={powerParam}
+              onChange={(e) => setPowerParam(e.target.value)}
+              placeholder="e.g. 0x1F or 1F"
+              disabled={running}
+            />
           </label>
 
           <label className="tsq-field">
             <span>Min [dBm] (optional)</span>
-            <input className="tsq-input" type="number" value={minValue ?? ""} onChange={() => void 0} placeholder="—" disabled={running} />
+            <input
+              className="tsq-input"
+              type="number"
+              value={minValue ?? ""}
+              onChange={() => void 0}
+              placeholder="—"
+              disabled={running}
+            />
           </label>
           <label className="tsq-field">
             <span>Max [dBm] (optional)</span>
-            <input className="tsq-input" type="number" value={maxValue ?? ""} onChange={() => void 0} placeholder="—" disabled={running} />
+            <input
+              className="tsq-input"
+              type="number"
+              value={maxValue ?? ""}
+              onChange={() => void 0}
+              placeholder="—"
+              disabled={running}
+            />
           </label>
         </div>
 
         <ul className="tsq-steps">
-          {ORDER.map((k) => (
-            <li key={k} className={`tsq-step ${steps[k]}`}>
-              <span className="icon">
-                {steps[k] === "doing" && <Loader2 className="spin" size={16} />}
-                {steps[k] === "done" && <CheckCircle size={16} />}
-                {steps[k] === "error" && <XCircle size={16} />}
-                {steps[k] === "idle" && <Circle size={16} />}
-              </span>
-              <span className="label">{LABEL[k]}</span>
-            </li>
-          ))}
+          {ORDER.map((k) => {
+            const st = steps[k];
+            return (
+              <li key={k} className={`tsq-step ${st}`}>
+                <span className="icon">
+                  {st === "doing" && <Loader2 className="spin" size={16} />}
+                  {st === "done" && <CheckCircle size={16} />}
+                  {st === "error" && <XCircle size={16} />}
+                  {st === "idle" && <Circle size={16} />}
+                </span>
+                <span className="label">{LABEL[k]}</span>
+              </li>
+            );
+          })}
         </ul>
 
         <div className="tsq-progress">{running && <div className="bar" />}</div>
 
         <div className="tsq-result">
-          {measuredDbm != null && (<span>Measured: <b>{measuredDbm.toFixed(2)} dBm</b></span>)}
-          {passed != null && (<span className={`tsq-chip ${passed ? "pass" : "fail"}`}>{passed ? "PASS" : "FAIL"}</span>)}
+          {measuredDbm != null && (
+            <span>
+              Measured: <b>{measuredDbm.toFixed(2)} dBm</b>
+            </span>
+          )}
+          {passed != null && (
+            <span className={`tsq-chip ${passed ? "pass" : "fail"}`}>
+              {passed ? "PASS" : "FAIL"}
+            </span>
+          )}
         </div>
 
-        {(running || logs.length > 0) && <pre className="tsq-run-log" ref={logRef}>{logs.join("\n")}</pre>}
+        {(running || logs.length > 0) && (
+          <pre className="tsq-run-log" ref={logRef}>
+            {logs.join("\n")}
+          </pre>
+        )}
 
         <div className="tsq-modal-actions">
-          {!running ? <button className="tsq-btn primary" onClick={start}>Start</button>
-                    : <button className="tsq-btn" onClick={abort}>Abort</button>}
-          <button className="tsq-btn ghost" onClick={onClose} disabled={running}>Close</button>
+          {!running ? (
+            <button className="tsq-btn primary" onClick={start}>
+              Start
+            </button>
+          ) : (
+            <button className="tsq-btn" onClick={abort}>
+              Abort
+            </button>
+          )}
+          <button className="tsq-btn ghost" onClick={onClose} disabled={running}>
+            Close
+          </button>
         </div>
       </div>
     </div>

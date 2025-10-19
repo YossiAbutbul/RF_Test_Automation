@@ -28,7 +28,7 @@ export default function Configurations() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-sm">
             <div>
               <label className="text-xs text-zinc-500">IP Address</label>
-              <input className="w-full mt-1 rounded-xl border px-3 py-2 bg-white" defaultValue="192.168.1.100" />
+              <input className="w-full mt-1 rounded-xl border px-3 py-2 bg-white" defaultValue="172.16.10.1" />
             </div>
             <div>
               <label className="text-xs text-zinc-500">Port</label>

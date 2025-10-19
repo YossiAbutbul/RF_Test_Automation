@@ -227,9 +227,7 @@
   cursor: pointer;
   font-size: 13px;
 }
-.tsq-btn.primary {
-  background: #758627;
-}
+
 .tsq-btn.ghost {
   background: #fff;
   color: #000000;
