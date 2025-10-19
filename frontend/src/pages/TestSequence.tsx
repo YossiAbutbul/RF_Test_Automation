@@ -266,6 +266,9 @@ export default function TestSequence() {
       tab === "LoRa" ? `LoRa ${t.type || "Test"}` :
       t.type || "Test";
 
+    // --- tab-based PPM default: 20 for LoRa/LTE, 40 for BLE ---
+    const tabPpmDefault = tab === "BLE" ? 40 : 20;
+
     const base = {
       testName: nameForModal,
       type: t.type,
@@ -273,15 +276,11 @@ export default function TestSequence() {
       freqHz,
       minValue: t.minValue ?? null,
       maxValue: t.maxValue ?? null,
-      ppmLimit: t.ppmLimit ?? 20,
+      ppmLimit: t.ppmLimit ?? tabPpmDefault, // ← modal gets the value from card, fallback by tab
       defaultMac,
     };
 
     const payload = tab === "BLE" ? { ...base, powerBle } : { ...base, powerDbm };
-
-    // Debug: remove later if noisy
-    // eslint-disable-next-line no-console
-    // console.log("[RunModal defaults]", payload);
 
     setRunDefaults(payload);
     setRunOpen(true);
@@ -354,6 +353,9 @@ export default function TestSequence() {
             ) : (
               sequences[tab].map((t) => {
                 const isFA = /frequency\s*accuracy/i.test(t.type);
+                // tab-based PPM default used in the card when value is undefined
+                const tabPpmDefault = tab === "BLE" ? 40 : 20;
+
                 return (
                   <div
                     key={t.id}
@@ -421,24 +423,38 @@ export default function TestSequence() {
 
                         <div className="tsq-form-grid">
                           <div className="tsq-form-row">
-                            <label>{tab === "LTE" ? "EARFCN / Frequency (MHz)" : "Frequency (MHz)"}</label>
+                            <label>{tab === "LTE" ? "Frequency [MHz]" : "Frequency [MHz]"}</label>
                             <input
                               className="tsq-input"
-                              value={t.frequencyText ?? ""}
+                              value={
+                                (t.frequencyText ?? "").trim() !== ""
+                                  ? t.frequencyText
+                                  : tab === "LoRa"
+                                  ? "918.5"
+                                  : tab === "LTE"
+                                  ? "1880"
+                                  : "2402"
+                              }
                               onChange={(e) => updateTest(t.id, { frequencyText: e.target.value })}
-                              placeholder="e.g., 918.5 or 918500000"
+                              placeholder={tab === "LoRa" ? "e.g., 918.5" : tab === "LTE" ? "e.g., 1880" : "e.g., 2402"}
                             />
                           </div>
                         </div>
 
                         <div className="tsq-form-grid">
                           <div className="tsq-form-row">
-                            <label>{tab === "BLE" ? "Power Parameter" : "Power (dBm)"}</label>
+                            <label>{tab === "BLE" ? "Power Parameter" : "Power [dBm]"}</label>
                             <input
                               className="tsq-input"
                               type={tab === "BLE" ? "text" : "number"}
-                              value={tab === "BLE" ? (t.powerBle ?? "") : (t.powerText ?? "")}
-                              placeholder={tab === "BLE" ? "e.g., 31" : "e.g., 14"}
+                              value={
+                                tab === "BLE"
+                                  ? (t.powerBle ?? "31")
+                                  : tab === "LTE"
+                                  ? (t.powerText ?? "23")
+                                  : (t.powerText ?? "14")
+                              }
+                              placeholder={tab === "BLE" ? "e.g., 31" : tab === "LTE" ? "e.g., 23" : "e.g., 14"}
                               onChange={(e) =>
                                 tab === "BLE"
                                   ? updateTest(t.id, { powerBle: e.target.value })
@@ -450,7 +466,7 @@ export default function TestSequence() {
                           {!isFA ? (
                             <>
                               <div className="tsq-form-row">
-                                <label>Min Value (dBm)</label>
+                                <label>Min Value [dBm]</label>
                                 <input
                                   className="tsq-input"
                                   type="number"
@@ -463,7 +479,7 @@ export default function TestSequence() {
                                 />
                               </div>
                               <div className="tsq-form-row">
-                                <label>Max Value (dBm)</label>
+                                <label>Max Value [dBm]</label>
                                 <input
                                   className="tsq-input"
                                   type="number"
@@ -482,13 +498,14 @@ export default function TestSequence() {
                               <input
                                 className="tsq-input"
                                 type="number"
-                                value={t.ppmLimit ?? ""}
+                                // Show the tab-based default (20 LoRa/LTE, 40 BLE) when empty
+                                value={t.ppmLimit ?? tabPpmDefault}
                                 onChange={(e) =>
                                   updateTest(t.id, {
                                     ppmLimit: e.target.value === "" ? undefined : Number(e.target.value),
                                   })
                                 }
-                                placeholder="e.g., 20"
+                                placeholder={String(tabPpmDefault)}
                               />
                             </div>
                           )}
@@ -551,7 +568,8 @@ export default function TestSequence() {
           defaultMac={runDefaults.defaultMac || "80E1271FD8DD"}
           minValue={runDefaults.minValue ?? null}
           maxValue={runDefaults.maxValue ?? null}
-          defaultPpmLimit={runDefaults.ppmLimit ?? 20}
+          // Ensure modal receives the value from the card (or tab default)
+          defaultPpmLimit={runDefaults.ppmLimit ?? (tab === "BLE" ? 40 : 20)}
           {...(tab === "BLE"
             ? { bleDefaultPowerParamHex: runDefaults.powerBle || "31" }
             : { defaultPowerDbm: runDefaults.powerDbm ?? 14 })}

@@ -1,8 +1,8 @@
 # ---------- Compatibility keys for split runners (added, nothing removed) ----------
 defaults:
   spectrum:
-    marker: "MARK1"       
-    default_delay_s: 0.15 
+    marker: "MARK1"
+    default_delay_s: 0.15
 
 # Global analyzer reference offset (read by tests_common.get_global_analyzer_ref_offset_db)
 analyzer_analyzer_ref_offset_db: 20.5  # copied from root analyzer_ref_offset_db
@@ -34,7 +34,7 @@ tests:
       settle_after_center_s: 0.250
       settle_after_lora_cw_on_s: 0.40
     settle:
-      after_center_s: 0.250 
+      after_center_s: 0.250
       after_lora_cw_on_s: 0.40
     zooms:
       - span_hz: 2000000
@@ -85,7 +85,7 @@ tests:
         rbw_hz: 1000
         vbw_hz: 3000
         delay_s: 0.250
-    
+
   # ===== LTE: EARFCN → Frequency (Hz) map =====
   lte_earfcn_map:
     # EARFCN → Frequency (Hz) mappings for Band 12
@@ -109,7 +109,7 @@ tests:
     settle_after_test_tone_s: 0.50
 
   ble_tx_power:
-    simple_cw_mode: true        
+    simple_cw_mode: true
     duration_s: 6.0
     tone_settle_s: 0.30
     measure_settle_s: 0.12
@@ -122,4 +122,30 @@ tests:
       ref_level_dbm: 0
     settle:
       after_center_s: 0.25
-  ble_channel_map: { "37": 2402000000, "38": 2426000000, "39": 2480000000 }
+
+  # ===== BLE: Frequency Accuracy (new, 3 zooms like LoRa) =====
+  ble_frequency_accuracy:
+    analyzer_setup:
+      span_hz: 2000000
+      rbw_hz: 300000
+      vbw_hz: 100000
+      ref_level_dbm: 20.0
+      use_peak_detector: true
+    after_center_s: 0.250
+    tone_duration_ms: 15000
+    offset_hz: 0
+    measure_settle_s: 0.10
+    zoom_delay_s: 0.250
+    zooms:
+      - span_hz: 2000000
+        rbw_hz: 300000
+        vbw_hz: 100000
+        delay_s: 0.250
+      - span_hz: 200000
+        rbw_hz: 10000
+        vbw_hz: 300000
+        delay_s: 0.250
+      - span_hz: 20000
+        rbw_hz: 1000
+        vbw_hz: 3000
+        delay_s: 0.250
