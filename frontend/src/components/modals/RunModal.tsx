@@ -11,12 +11,20 @@ type Props = {
   protocol: Protocol;
   mode?: TestMode;
   testName?: string;
+
+  // Common test parameters
   defaultFreqHz?: number;
   defaultPowerDbm?: number;
   defaultMac?: string;
+
+  // Min/Max for power test
   minValue?: number | null;
   maxValue?: number | null;
+
+  // Frequency accuracy ppm limit
   defaultPpmLimit?: number;
+
+  // BLE-specific
   bleDefaultPowerParamHex?: string;
 };
 
@@ -24,16 +32,18 @@ export default function RunModal(props: Props) {
   const { protocol } = props;
 
   if (protocol === "BLE") {
-    // BLE: separate modal, no backend wire, Power Parameter (hex)
+    // BLE modal: unified for both Tx Power and Frequency Accuracy
     return (
       <BleRunModal
         open={props.open}
         onClose={props.onClose}
+        mode={props.mode ?? "txPower"}
         defaultMac={props.defaultMac ?? "80E1271FD8DD"}
         defaultFreqHz={props.defaultFreqHz ?? 2_402_000_000}
         defaultPowerParamHex={props.bleDefaultPowerParamHex ?? "31"}
         minValue={props.minValue ?? null}
         maxValue={props.maxValue ?? null}
+        defaultPpmLimit={props.defaultPpmLimit ?? 40}
       />
     );
   }
