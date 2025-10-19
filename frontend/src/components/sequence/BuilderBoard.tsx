@@ -1,5 +1,6 @@
 import React from 'react'
 import { Card } from '@/components/ui/Card'
+
 export default function BuilderBoard({empty=false}:{empty?:boolean}){
   return (
     <Card className='p-4'>

@@ -36,7 +36,7 @@ export default function Dashboard() {
             <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-zinc-500">IP Address</div>
-                <div className="mt-1 font-medium tracking-tight text-zinc-700">192.168.1.100</div>
+                <div className="mt-1 font-medium tracking-tight text-zinc-700">172.16.10.1</div>
               </div>
               <div>{/* spacer to match layout */}</div>
             </div>
