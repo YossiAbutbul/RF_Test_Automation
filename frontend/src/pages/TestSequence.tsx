@@ -421,24 +421,38 @@ export default function TestSequence() {
 
                         <div className="tsq-form-grid">
                           <div className="tsq-form-row">
-                            <label>{tab === "LTE" ? "EARFCN / Frequency (MHz)" : "Frequency (MHz)"}</label>
+                            <label>{tab === "LTE" ? "Frequency [MHz]" : "Frequency [MHz]"}</label>
                             <input
                               className="tsq-input"
-                              value={t.frequencyText ?? ""}
+                              value={
+                                (t.frequencyText ?? "").trim() !== ""
+                                  ? t.frequencyText
+                                  : tab === "LoRa"
+                                  ? "918.5"
+                                  : tab === "LTE"
+                                  ? "1880"
+                                  : "2402"
+                              }
                               onChange={(e) => updateTest(t.id, { frequencyText: e.target.value })}
-                              placeholder="e.g., 918.5 or 918500000"
+                              placeholder={tab === "LoRa" ? "e.g., 918.5" : tab === "LTE" ? "e.g., 1880" : "e.g., 2402"}
                             />
                           </div>
                         </div>
 
                         <div className="tsq-form-grid">
                           <div className="tsq-form-row">
-                            <label>{tab === "BLE" ? "Power Parameter" : "Power (dBm)"}</label>
+                            <label>{tab === "BLE" ? "Power Parameter" : "Power [dBm]"}</label>
                             <input
                               className="tsq-input"
                               type={tab === "BLE" ? "text" : "number"}
-                              value={tab === "BLE" ? (t.powerBle ?? "") : (t.powerText ?? "")}
-                              placeholder={tab === "BLE" ? "e.g., 31" : "e.g., 14"}
+                              value={
+                                tab === "BLE"
+                                  ? (t.powerBle ?? "31")
+                                  : tab === "LTE"
+                                  ? (t.powerText ?? "23")
+                                  : (t.powerText ?? "14")
+                              }
+                              placeholder={tab === "BLE" ? "e.g., 31" : tab === "LTE" ? "e.g., 23" : "e.g., 14"}
                               onChange={(e) =>
                                 tab === "BLE"
                                   ? updateTest(t.id, { powerBle: e.target.value })
@@ -450,7 +464,7 @@ export default function TestSequence() {
                           {!isFA ? (
                             <>
                               <div className="tsq-form-row">
-                                <label>Min Value (dBm)</label>
+                                <label>Min Value [dBm]</label>
                                 <input
                                   className="tsq-input"
                                   type="number"
@@ -463,7 +477,7 @@ export default function TestSequence() {
                                 />
                               </div>
                               <div className="tsq-form-row">
-                                <label>Max Value (dBm)</label>
+                                <label>Max Value [dBm]</label>
                                 <input
                                   className="tsq-input"
                                   type="number"
