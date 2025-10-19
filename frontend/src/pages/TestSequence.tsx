@@ -1,155 +1,187 @@
-import React, { useMemo, useRef, useState } from "react";
-import { ChevronDown, GripVertical, PlayCircle, Plus, Trash2 } from "lucide-react";
-import RunModal from "../components/modals/RunModal";
+import React from "react";
+import { ChevronDown, GripVertical, Trash2, PlayCircle } from "lucide-react";
 import "./css/TestSequence.css";
+import RunModal from "../components/modals/RunModal"; // ← added
 
-/* ---------------- Types ---------------- */
-type Protocol = "LoRa" | "LTE" | "BLE";
+// -------------------------------
+// Types (match your existing usage)
+// -------------------------------
+export type Protocol = "LoRa" | "LTE" | "BLE";
 
-type TestItem = {
+export type TestItem = {
   id: number;
-  type: string;
-  name: string;
+  type: string;          // e.g., "Tx Power", "Frequency Accuracy"
+  name: string;          // editable display name
   minimized?: boolean;
-  runCondition?: "Run Always" | "Run If Pass" | "Run If Fail";
-  frequencyText?: string;  // e.g. "918.5" or "918500000"
-  powerText?: string;      // LoRa/LTE: e.g. "14"
-  powerBle?: string;       // BLE: e.g. "0x1F"
+
+  // free-form inputs from the card
+  frequencyText?: string; // user-entered freq; we won't parse here
+  powerText?: string;     // for LoRa/LTE
+  powerBle?: string;      // for BLE
   minValue?: number;
   maxValue?: number;
-
-  // Frequency Accuracy only
   ppmLimit?: number;
-
-  includeScreenshot?: boolean;
 };
 
-type RunDefaults = {
-  testName: string;
-  type: string;
-  freqHz: number;
-  powerDbm?: number;               // LoRa/LTE only (optional now)
-  powerBle?: string;               // BLE hex (e.g. "0x1F")
-  minValue?: number | null;        // can be null in callers
-  maxValue?: number | null;        // can be null in callers
-  ppmLimit?: number;
-  defaultMac?: string | null;
+// -------------------------------
+// Persistence helpers (tiny + safe)
+// -------------------------------
+const SEQ_STORAGE_KEY = "rf-automation:test-sequence:v1";
+
+type PersistedSeq = {
+  tab: Protocol;
+  sequences: Record<Protocol, TestItem[]>;
+  nextId: number;
 };
 
-/* ---------------- Defaults ---------------- */
-const TEST_LIBRARY = ["Tx Power", "Frequency Accuracy"];
+function findNextIdFromSequences(seqs: Record<Protocol, TestItem[]>): number {
+  const all = [...seqs.LoRa, ...seqs.LTE, ...seqs.BLE];
+  const maxId = all.reduce((m, t) => (t.id > m ? t.id : m), 0);
+  return maxId + 1;
+}
 
-const BASE_DEFAULTS = {
-  runCondition: "Run Always" as const,
-  frequencyText: "918.5", // LoRa default shown in input without "MHz"
-  powerText: "14",
-  minimized: false,
-  includeScreenshot: true,
-};
-
-// Helpers to parse the first number in a string
+// -------------------------------
+// Small helpers for Run defaults
+// -------------------------------
 const NUM_RE = /[-+]?\d*\.?\d+(?:e[-+]?\d+)?/i;
-function parseFirstFreqHz(text: string | number | undefined): number {
+
+function parseFirstFreqHz(text?: string | number): number {
   if (text == null) return 0;
   const s = String(text);
   const m = s.match(NUM_RE);
   if (!m) return 0;
-  const val = parseFloat(m[0]); // use the matched token
-  // If user typed "918.5" assume MHz, else assume already in Hz
-  return val < 1e6 ? Math.round(val * 1_000_000) : Math.round(val);
+  const val = parseFloat(m[0]);
+  // Treat < 1e6 as MHz; otherwise assume already Hz
+  return Number.isFinite(val) ? (val < 1e6 ? Math.round(val * 1_000_000) : Math.round(val)) : 0;
 }
-function parseFirstInt(text: string | number | undefined): number {
+
+function parseFirstInt(text?: string | number): number {
   if (text == null) return 0;
-  const s = String(text);
-  const first = s.split(",")[0].trim();
-  const n = parseInt(first, 10);
+  const s = String(text).split(",")[0].trim();
+  const n = parseInt(s, 10);
   return Number.isFinite(n) ? n : 0;
 }
-const isFreqAccuracy = (t: TestItem | string) =>
-  /frequency\s*accuracy/i.test(typeof t === "string" ? t : t.type);
 
-/* ---------------- Component ---------------- */
+const isFreqAccuracy = (t: TestItem) => /frequency\s*accuracy/i.test(t.type);
+
+// -------------------------------------------------------
+// Component (your logic/structure/styles preserved)
+// -------------------------------------------------------
+const TEST_LIBRARY = ["Tx Power", "Frequency Accuracy"];
+
 export default function TestSequence() {
-  const [tab, setTab] = useState<Protocol>("LoRa");
-
-  const [sequences, setSequences] = useState<Record<Protocol, TestItem[]>>({
+  // your state
+  const [tab, setTab] = React.useState<Protocol>("LoRa");
+  const [sequences, setSequences] = React.useState<Record<Protocol, TestItem[]>>({
     LoRa: [],
     LTE: [],
     BLE: [],
   });
+  const nextId = React.useRef(1);
 
-  const [draggingLibTest, setDraggingLibTest] = useState<string | null>(null);
-  const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
-  const [dragOverCardId, setDragOverCardId] = useState<number | null>(null);
-  const [dragOverEdge, setDragOverEdge] = useState<"above" | "below" | null>(null);
+  // ------- Hydration & Persist (added earlier) -------
+  const hydratedRef = React.useRef(false);
 
-  const nextId = useRef(1);
+  React.useEffect(() => {
+    if (hydratedRef.current) return;
+    try {
+      const raw = localStorage.getItem(SEQ_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as PersistedSeq;
+        if (parsed && parsed.sequences && parsed.tab) {
+          setTab(parsed.tab);
+          setSequences(parsed.sequences);
+          nextId.current = Number.isFinite(parsed.nextId)
+            ? parsed.nextId
+            : findNextIdFromSequences(parsed.sequences);
+        }
+      }
+    } catch {
+      // ignore malformed cache
+    } finally {
+      hydratedRef.current = true;
+    }
+  }, []);
 
-  const [runOpen, setRunOpen] = useState(false);
-  const [runDefaults, setRunDefaults] = useState<RunDefaults | null>(null);
+  React.useEffect(() => {
+    if (!hydratedRef.current) return;
+    const payload: PersistedSeq = {
+      tab,
+      sequences,
+      nextId: nextId.current,
+    };
+    try {
+      localStorage.setItem(SEQ_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // storage may be full/blocked; ignore
+    }
+  }, [tab, sequences]);
+  // ------- /Hydration & Persist -------
 
-  const totalAll = useMemo(
-    () => sequences.LoRa.length + sequences.LTE.length + sequences.BLE.length,
-    [sequences]
-  );
+  // your DnD UI state
+  const [draggingCardId, setDraggingCardId] = React.useState<number | null>(null);
+  const [dragOverCardId, setDragOverCardId] = React.useState<number | null>(null);
+  const [dragOverEdge, setDragOverEdge] = React.useState<"above" | "below" | null>(null);
+  const [draggingLibTest, setDraggingLibTest] = React.useState<string | null>(null);
 
-  /* ---------- Helpers to update a test ---------- */
-  const updateTest = (id: number, patch: Partial<TestItem>) => {
+  const totalAll =
+    sequences.LoRa.length + sequences.LTE.length + sequences.BLE.length;
+
+  // your helpers
+  const makeTest = (name: string): TestItem => ({
+    id: nextId.current++,
+    type: name,
+    name,
+    minimized: false,
+  });
+
+  const addTestToCurrent = (name: string) => {
     setSequences((prev) => {
-      const copy: Record<Protocol, TestItem[]> = { ...prev };
-      copy[tab] = copy[tab].map((t) => (t.id === id ? { ...t, ...patch } : t));
-      return copy;
+      // create new test
+      const newTest = makeTest(name);
+      // minimize all existing tests in the current tab
+      const minimizedList = prev[tab].map((t) => ({ ...t, minimized: true }));
+      // add new test expanded
+      return { ...prev, [tab]: [...minimizedList, { ...newTest, minimized: false }] };
     });
   };
 
-  /* ---------- Add from library ---------- */
-  const addTestToCurrent = (name: string) => {
-    const id = nextId.current++;
+  const updateTest = (id: number, patch: Partial<TestItem>) => {
     setSequences((prev) => {
-      const copy = { ...prev };
-
-      // Per-tab defaults (fix #2): LTE cards start with 1880 MHz & 23 dBm
-      const base = isFreqAccuracy(name)
-        ? { ...BASE_DEFAULTS, ppmLimit: 20 }
-        : { ...BASE_DEFAULTS, minValue: undefined, maxValue: undefined };
-
-      const tabDefaults: Partial<TestItem> =
-        tab === "LTE"
-          ? { frequencyText: "1880", powerText: "23" }
-          : tab === "LoRa"
-          ? { frequencyText: "918.5", powerText: "14" }
-          : { frequencyText: "2402", powerBle: "31" };
-
-
-      copy[tab] = [...copy[tab], { id, type: name, name, ...base, ...tabDefaults }];
-
-      // collapse previous tests, keep the newly added open
-      copy[tab] = copy[tab].map((t, i, arr) => (i === arr.length - 1 ? t : { ...t, minimized: true }));
-      return copy;
+      const list = prev[tab].map((t) => (t.id === id ? { ...t, ...patch } : t));
+      return { ...prev, [tab]: list };
     });
   };
 
   const removeTest = (id: number) => {
     setSequences((prev) => {
-      const copy = { ...prev };
-      copy[tab] = copy[tab].filter((t) => t.id !== id);
-      return copy;
+      const list = prev[tab].filter((t) => t.id !== id);
+      return { ...prev, [tab]: list };
+    });
+  };
+
+  const reorderInCurrent = (from: number, to: number) => {
+    setSequences((prev) => {
+      const list = [...prev[tab]];
+      if (from < 0 || from >= list.length) return prev;
+      let insertAt = Math.max(0, Math.min(to, list.length));
+      const [moved] = list.splice(from, 1);
+      if (from < insertAt) insertAt -= 1;
+      list.splice(insertAt, 0, moved);
+      return { ...prev, [tab]: list };
     });
   };
 
   const toggleMinimize = (id: number) => {
-    setSequences((prev) => {
-      const copy = { ...prev };
-      copy[tab] = copy[tab].map((t) => (t.id === id ? { ...t, minimized: !t.minimized } : t));
-      return copy;
-    });
+    const t = sequences[tab].find((x) => x.id === id);
+    if (!t) return;
+    updateTest(id, { minimized: !t.minimized });
   };
 
-  /* ---------- Drag & Drop (cards) ---------- */
-  const onCardDragStart = (e: React.DragEvent<HTMLDivElement>, id: number) => {
+  // DnD: cards
+  const onCardDragStart = (_: React.DragEvent<HTMLDivElement>, id: number) =>
     setDraggingCardId(id);
-    e.dataTransfer.effectAllowed = "move";
-  };
+
   const onCardDragOver = (e: React.DragEvent<HTMLDivElement>, id: number) => {
     e.preventDefault();
     if (draggingCardId == null) return;
@@ -158,96 +190,103 @@ export default function TestSequence() {
     setDragOverCardId(id);
     setDragOverEdge(e.clientY < mid ? "above" : "below");
   };
+
   const onCardDrop = (e: React.DragEvent<HTMLDivElement>, id: number) => {
     e.preventDefault();
-    setSequences((prev) => {
-      const list = [...prev[tab]];
-      const from = list.findIndex((t) => t.id === draggingCardId);
-      const to = list.findIndex((t) => t.id === id);
-      if (from === -1 || to === -1) return prev;
-      const [item] = list.splice(from, 1);
-      const insertAt = to + (dragOverEdge === "below" ? 1 : 0);
-      list.splice(insertAt, 0, item);
-      return { ...prev, [tab]: list };
-    });
+    const list = sequences[tab];
+    const from = list.findIndex((t) => t.id === draggingCardId);
+    const to = list.findIndex((t) => t.id === id);
+    if (from === -1 || to === -1) return;
+    const insertAt = to + (dragOverEdge === "below" ? 1 : 0);
+    reorderInCurrent(from, insertAt);
     setDraggingCardId(null);
     setDragOverCardId(null);
     setDragOverEdge(null);
   };
+
   const onCardDragEnd = () => {
     setDraggingCardId(null);
     setDragOverCardId(null);
     setDragOverEdge(null);
   };
 
-  /* ---------- Drag from Library ---------- */
-  const onBuilderDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
+  // DnD: library → builder
+  const onBuilderDragOver = (e: React.DragEvent) => e.preventDefault();
   const onBuilderDrop = () => {
     if (!draggingLibTest) return;
     addTestToCurrent(draggingLibTest);
     setDraggingLibTest(null);
   };
 
-  /* ---------- Play locally ---------- */
+  // -----------------------------
+  // Run modal wiring (restored)
+  // -----------------------------
+  const [runOpen, setRunOpen] = React.useState(false);
+  const [runDefaults, setRunDefaults] = React.useState<{
+    testName: string;
+    type: string;
+    mode: "txPower" | "freqAccuracy";
+    freqHz: number;
+    powerDbm?: number;  // LoRa/LTE
+    powerBle?: string;  // BLE hex
+    minValue?: number | null;
+    maxValue?: number | null;
+    ppmLimit?: number;
+    defaultMac?: string | null;
+  } | null>(null);
+
   const playSingle = (t: TestItem) => {
-    const freqHz = parseFirstFreqHz(t.frequencyText);
+    const mode: "txPower" | "freqAccuracy" = isFreqAccuracy(t) ? "freqAccuracy" : "txPower";
 
-    // LoRa/LTE power (numeric string -> int)
-    const powerDbm = parseFirstInt(t.powerText);
+    const rawFreqHz = parseFirstFreqHz(t.frequencyText);
+    const freqHz =
+      rawFreqHz > 0
+        ? rawFreqHz
+        : tab === "LTE"
+        ? 1_880_000_000
+        : tab === "LoRa"
+        ? 918_500_000
+        : 2_402_000_000;
 
-    // BLE power (hex string, e.g. "0x1F" or "1F")
-    const powerBle = (t.powerBle || "").trim();
+    const powerDbmParsed = parseFirstInt(t.powerText);
+    const powerDbm =
+      Number.isFinite(powerDbmParsed) && powerDbmParsed !== 0
+        ? powerDbmParsed
+        : tab === "LTE"
+        ? 23
+        : 14;
+
+    const powerBle = (t.powerBle || "").trim() || "31";
 
     let defaultMac: string | null = null;
     if (tab === "LTE") defaultMac = "80E1271FD8DD";
 
-    // Keep your existing naming logic (fine with the new wrapper)
     const nameForModal =
-      tab === "LTE"
-        ? `LTE ${t.type || "Test"}`
-        : tab === "LoRa"
-        ? `LoRa ${t.type || "Test"}`
-        : t.type || "Test";
+      tab === "LTE" ? `LTE ${t.type || "Test"}` :
+      tab === "LoRa" ? `LoRa ${t.type || "Test"}` :
+      t.type || "Test";
 
-    // Build runDefaults per protocol (so the wrapper can pass the right defaults)
-    if (tab === "BLE") {
-      setRunDefaults({
-        testName: nameForModal,
-        type: t.type,
-        freqHz: freqHz || 2_402_000_000,           // BLE default 2402 MHz
-        // no numeric power for BLE; store hex so the wrapper can pass it down:
-        powerBle: powerBle || "0x1F",
-        minValue: t.minValue ?? null,
-        maxValue: t.maxValue ?? null,
-        ppmLimit: t.ppmLimit ?? 20,
-        defaultMac,
-      });
-    } else {
-      // LoRa / LTE (unchanged behavior)
-      setRunDefaults({
-        testName: nameForModal,
-        type: t.type,
-        freqHz:
-          freqHz ||
-          (tab === "LTE" ? 1_880_000_000 : 918_500_000), // your old defaults
-        powerDbm: Number.isFinite(powerDbm)
-          ? powerDbm
-          : tab === "LTE"
-          ? 23
-          : 14,
-        minValue: t.minValue ?? null,
-        maxValue: t.maxValue ?? null,
-        ppmLimit: t.ppmLimit ?? 20,
-        defaultMac,
-      });
-    }
+    const base = {
+      testName: nameForModal,
+      type: t.type,
+      mode,
+      freqHz,
+      minValue: t.minValue ?? null,
+      maxValue: t.maxValue ?? null,
+      ppmLimit: t.ppmLimit ?? 20,
+      defaultMac,
+    };
 
+    const payload = tab === "BLE" ? { ...base, powerBle } : { ...base, powerDbm };
+
+    // Debug: remove later if noisy
+    // eslint-disable-next-line no-console
+    // console.log("[RunModal defaults]", payload);
+
+    setRunDefaults(payload);
     setRunOpen(true);
   };
 
-  /* ---------- Render ---------- */
   return (
     <div className="tsq-container">
       <div className="tsq-header">
@@ -261,7 +300,11 @@ export default function TestSequence() {
       {/* Tabs */}
       <div className="tsq-tabs">
         {(["LoRa", "LTE", "BLE"] as const).map((p) => (
-          <button key={p} className={`tsq-tab ${tab === p ? "is-active" : ""}`} onClick={() => setTab(p)}>
+          <button
+            key={p}
+            className={`tsq-tab ${tab === p ? "is-active" : ""}`}
+            onClick={() => setTab(p)}
+          >
             {p}
             <span className="tsq-badge">{sequences[p].length}</span>
           </button>
@@ -278,7 +321,9 @@ export default function TestSequence() {
           <div className="tsq-card-head">
             <div>
               <div className="tsq-card-title">{tab} Builder</div>
-              <div className="tsq-card-sub">Drag tests from the library or reorder existing tests</div>
+              <div className="tsq-card-sub">
+                Drag tests from the library or reorder existing tests
+              </div>
             </div>
             <div className="tsq-actions">
               <button className="tsq-btn ghost">Load {tab.toUpperCase()}</button>
@@ -286,10 +331,8 @@ export default function TestSequence() {
             </div>
           </div>
 
-          {/* Builder body */}
           <div className="tsq-card-body">
             {sequences[tab].length === 0 ? (
-              // Keep centered empty state without touching global CSS
               <div
                 className="tsq-empty"
                 style={{
@@ -304,16 +347,18 @@ export default function TestSequence() {
               >
                 <div className="tsq-empty-icon">📥</div>
                 <div className="tsq-empty-title">No tests yet</div>
-                <div className="tsq-empty-sub">Drag a test from the right to get started</div>
+                <div className="tsq-empty-sub">
+                  Drag a test from the right to get started
+                </div>
               </div>
             ) : (
               sequences[tab].map((t) => {
-                const isFA = isFreqAccuracy(t);
+                const isFA = /frequency\s*accuracy/i.test(t.type);
                 return (
                   <div
                     key={t.id}
                     className={[
-                      "tsq-card", // keep original border style
+                      "tsq-card",
                       "tsq-test-card",
                       draggingCardId === t.id ? "is-dragging" : "",
                       dragOverCardId === t.id ? `is-over-${dragOverEdge}` : "",
@@ -335,17 +380,28 @@ export default function TestSequence() {
                           title={t.minimized ? "Expand" : "Minimize"}
                         >
                           <span className="tsq-title-text">
-                            {t.type} <span className="tsq-test-proto"> &nbsp;· {tab}</span>
+                            {t.type} <span className="tsq-test-proto">&nbsp;· {tab}</span>
                           </span>
-                          <ChevronDown size={16} className={`tsq-title-caret ${t.minimized ? "" : "is-open"}`} />
+                          <ChevronDown
+                            size={16}
+                            className={`tsq-title-caret ${t.minimized ? "" : "is-open"}`}
+                          />
                         </button>
                       </div>
 
                       <div className="tsq-test-actions">
-                        <button className="tsq-icon-btn ghost" title="Play locally" onClick={() => playSingle(t)}>
+                        <button
+                          className="tsq-icon-btn ghost"
+                          title="Play locally"
+                          onClick={() => playSingle(t)}
+                        >
                           <PlayCircle size={18} />
                         </button>
-                        <button className="tsq-icon-btn ghost danger" title="Remove" onClick={() => removeTest(t.id)}>
+                        <button
+                          className="tsq-icon-btn ghost danger"
+                          title="Remove"
+                          onClick={() => removeTest(t.id)}
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -358,14 +414,7 @@ export default function TestSequence() {
                           <input
                             className="tsq-input"
                             value={t.name}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setSequences((prev) => {
-                                const copy = { ...prev };
-                                copy[tab] = copy[tab].map((x) => (x.id === t.id ? { ...x, name: v } : x));
-                                return copy;
-                              });
-                            }}
+                            onChange={(e) => updateTest(t.id, { name: e.target.value })}
                             placeholder="e.g., Tx Power"
                           />
                         </div>
@@ -389,7 +438,7 @@ export default function TestSequence() {
                               className="tsq-input"
                               type={tab === "BLE" ? "text" : "number"}
                               value={tab === "BLE" ? (t.powerBle ?? "") : (t.powerText ?? "")}
-                              placeholder={tab === "BLE" ? "e.g., 0x1F or 1F" : "e.g., 14"}
+                              placeholder={tab === "BLE" ? "e.g., 31" : "e.g., 14"}
                               onChange={(e) =>
                                 tab === "BLE"
                                   ? updateTest(t.id, { powerBle: e.target.value })
@@ -398,7 +447,6 @@ export default function TestSequence() {
                             />
                           </div>
 
-                          {/* Tx Power limits OR Freq Accuracy ppm limit */}
                           {!isFA ? (
                             <>
                               <div className="tsq-form-row">
@@ -414,7 +462,6 @@ export default function TestSequence() {
                                   }
                                 />
                               </div>
-
                               <div className="tsq-form-row">
                                 <label>Max Value (dBm)</label>
                                 <input
@@ -437,7 +484,9 @@ export default function TestSequence() {
                                 type="number"
                                 value={t.ppmLimit ?? ""}
                                 onChange={(e) =>
-                                  updateTest(t.id, { ppmLimit: e.target.value === "" ? undefined : Number(e.target.value) })
+                                  updateTest(t.id, {
+                                    ppmLimit: e.target.value === "" ? undefined : Number(e.target.value),
+                                  })
                                 }
                                 placeholder="e.g., 20"
                               />
@@ -476,7 +525,11 @@ export default function TestSequence() {
                   <div className="tsq-lib-name">{name}</div>
                   <div className="tsq-lib-sub">Drag to add</div>
                 </div>
-                <button className="tsq-icon-btn" onClick={() => addTestToCurrent(name)} title="Quick Add">
+                <button
+                  className="tsq-icon-btn"
+                  onClick={() => addTestToCurrent(name)}
+                  title="Quick Add"
+                >
                   +
                 </button>
               </div>
@@ -485,23 +538,23 @@ export default function TestSequence() {
         </aside>
       </div>
 
-      {/* Run Modal */}
+      {/* Run Modal (restored) */}
       {runOpen && runDefaults && (
         <RunModal
+          key={`${tab}-${runDefaults.type}-${runDefaults.mode}`}
           open={true}
           onClose={() => setRunOpen(false)}
-          protocol={tab as "LoRa" | "LTE" | "BLE"}
-          mode={/frequency/i.test(runDefaults?.testName || "") ? "freqAccuracy" : "txPower"}
-          testName={runDefaults?.testName}
-          defaultFreqHz={runDefaults?.freqHz}
-          defaultPowerDbm={runDefaults?.powerDbm}          // LoRa/LTE only
-          defaultMac={runDefaults?.defaultMac || "80E1271FD8DD"}
-          minValue={runDefaults?.minValue ?? null}
-          maxValue={runDefaults?.maxValue ?? null}
-          defaultPpmLimit={runDefaults?.ppmLimit ?? 20}
-          bleDefaultPowerParamHex={
-            tab === "BLE" ? (runDefaults?.powerBle || "0x1F") : undefined
-          }
+          protocol={tab}
+          mode={runDefaults.mode}
+          testName={runDefaults.testName}
+          defaultFreqHz={runDefaults.freqHz}
+          defaultMac={runDefaults.defaultMac || "80E1271FD8DD"}
+          minValue={runDefaults.minValue ?? null}
+          maxValue={runDefaults.maxValue ?? null}
+          defaultPpmLimit={runDefaults.ppmLimit ?? 20}
+          {...(tab === "BLE"
+            ? { bleDefaultPowerParamHex: runDefaults.powerBle || "31" }
+            : { defaultPowerDbm: runDefaults.powerDbm ?? 14 })}
         />
       )}
     </div>
