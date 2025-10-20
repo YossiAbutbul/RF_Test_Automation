@@ -59,7 +59,7 @@ export default function LoRaRunModal({
   testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
   defaultFreqHz = 918_500_000,
   defaultPowerDbm = 14,
-  defaultMac = "80E1271FD8DD",
+  defaultMac = "80E1271FD8B8",
   minValue = null,
   maxValue = null,
   defaultPpmLimit = 20,

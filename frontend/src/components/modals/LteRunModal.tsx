@@ -62,7 +62,7 @@ export default function LteRunModal({
   testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
   defaultFreqHz = 1_715_000_000,
   defaultPowerDbm = 23,
-  defaultMac = "80E1271FD8DD",
+  defaultMac = "80E1271FD8B8",
   minValue = null,
   maxValue = null,
   defaultPpmLimit = 20,

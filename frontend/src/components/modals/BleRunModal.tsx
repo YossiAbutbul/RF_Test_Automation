@@ -102,7 +102,7 @@ export default function BleRunModal({
   onClose,
   mode = "txPower",
 
-  defaultMac = "80E1271FD8DD",
+  defaultMac = "80E1271FD8B8",
   defaultFreqHz = 2_402_000_000,
 
   defaultPowerParamHex = "31",

@@ -259,7 +259,7 @@ export default function TestSequence() {
     const powerBle = (t.powerBle || "").trim() || "31";
 
     let defaultMac: string | null = null;
-    if (tab === "LTE") defaultMac = "80E1271FD8DD";
+    if (tab === "LTE") defaultMac = "80E1271FD8B8";
 
     const nameForModal =
       tab === "LTE" ? `LTE ${t.type || "Test"}` :
@@ -565,7 +565,7 @@ export default function TestSequence() {
           mode={runDefaults.mode}
           testName={runDefaults.testName}
           defaultFreqHz={runDefaults.freqHz}
-          defaultMac={runDefaults.defaultMac || "80E1271FD8DD"}
+          defaultMac={runDefaults.defaultMac || "80E1271FD8B8"}
           minValue={runDefaults.minValue ?? null}
           maxValue={runDefaults.maxValue ?? null}
           // Ensure modal receives the value from the card (or tab default)

@@ -1,0 +1,90 @@
+/* ------------------------------
+   CONFIGURATIONS PAGE LAYOUT
+   ------------------------------ */
+
+/* Force full-height layout for the Configurations page container */
+.configurations-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--background, #f7f8fa);
+}
+
+/* Card styling for DUT Connection section */
+.dut-connection-card {
+  height: calc(100vh - 220px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg, #ffffff);
+  border-radius: 1rem;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: background 0.3s ease;
+}
+
+/* The top controls (scan, dropdowns) stay fixed above the scrollable table */
+.dut-connection-card .controls {
+  flex-shrink: 0;
+  padding: 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  background: inherit;
+  z-index: 2;
+}
+
+/* Table wrapper becomes scrollable */
+.dut-connection-card .table-scroll {
+  flex-grow: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107, 119, 247, 0.5) transparent;
+}
+
+/* Custom scrollbar (WebKit browsers) */
+.dut-connection-card .table-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.dut-connection-card .table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dut-connection-card .table-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(107, 119, 247, 0.4);
+  border-radius: 4px;
+}
+.dut-connection-card .table-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(107, 119, 247, 0.7);
+}
+
+/* Table layout tweaks for a clean look */
+.dut-connection-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.dut-connection-card th,
+.dut-connection-card td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+/* Keep header sticky at top during scroll */
+.dut-connection-card thead th {
+  position: sticky;
+  top: 0;
+  background-color: #fafafa;
+  z-index: 5;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Smooth color transitions for hover effects */
+.dut-connection-card tbody tr {
+  transition: background 0.15s ease;
+}
+.dut-connection-card tbody tr:hover {
+  background: rgba(107, 119, 247, 0.03);
+}
+
+/* Optional: limit modal scroll inside page if open */
+.nickname-modal-open .dut-connection-card {
+  filter: blur(2px);
+  pointer-events: none;
+}
