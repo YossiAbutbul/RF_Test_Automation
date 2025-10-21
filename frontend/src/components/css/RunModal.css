@@ -219,8 +219,8 @@
   margin-top: 10px;
 }
 .tsq-btn {
-  background: #b1bdd8;
-  color: #000000;
+  background: var(--tsq-btn-primary);
+  color: #fff;
   padding: 6px 10px;
   border-radius: 10px;
   cursor: pointer;
