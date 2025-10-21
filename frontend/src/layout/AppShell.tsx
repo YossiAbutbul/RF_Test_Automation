@@ -92,20 +92,19 @@ export default function AppShell() {
       </aside>
 
       {/* Header shifts with sidebar; full-width across page */}
-      <header
+      {/* <header
         className="sticky top-0 z-40 bg-white/85 backdrop-blur border-b border-zinc-200"
         style={{ marginLeft: sbWidth, transition }}
-      >
+      > */}
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center">
-            {/* Hamburger icon removed; use sidebar title to toggle */}
           </div>
-          <div className="flex items-center gap-2 text-sm">
+          {/* <div className="flex items-center gap-2 text-sm">
             <span className="inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-emerald-50 text-emerald-600">DUT</span>
             <span className="inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-[#EEF0FF] text-[#5964DA]">Analyzer</span>
-          </div>
+          </div> */}
         </div>
-      </header>
+      {/* </header> */}
 
       {/* Main content also shifts with sidebar */}
       <main

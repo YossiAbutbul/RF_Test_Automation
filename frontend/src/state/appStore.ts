@@ -45,7 +45,7 @@ type ConfigSlice = {
 };
 
 type BleSlice = {
-  devices: BleDevice[];   // visible, filtered
+  devices: BleDevice[];
   scanning: boolean;
   scanEndsAt: number | null;
   discovered: Record<string, BleDevice>;
@@ -75,11 +75,18 @@ type Actions = {
   saveNickname: (mac: string, nickname: string) => void;
   bleConnect: (mac: string) => Promise<void>;
   bleDisconnect: (mac: string) => Promise<void>;
+
+  /* analyzer setters used by AnalyzerConnection.tsx */
+  setAnalyzerState: (patch: Partial<AnalyzerSlice>) => void;
+  setAnalyzerIp: (ip: string) => void;
+  setAnalyzerPort: (port: string) => void;
+  setAnalyzerModel: (model: string) => void;
+
   analyzerConnect: () => void;
   analyzerDisconnect: () => void;
 };
 
-export type AppState = {
+type RootState = {
   config: ConfigSlice;
   ble: BleSlice;
   analyzer: AnalyzerSlice;
@@ -102,9 +109,7 @@ function filterByFamily(
 
   const needle = familyId.toLowerCase();
   return devices.filter((d) => {
-    // show if assigned to selected project
     if (d.assignedProject === familyId) return true;
-    // or matches raw advertisement name
     const rn = (d.rawName ?? "").toLowerCase();
     return rn.includes(needle);
   });
@@ -114,7 +119,6 @@ function computeVisibleDevices(
   discovered: Record<string, BleDevice>,
   familyId: string
 ): BleDevice[] {
-  // stable list; optionally sort by RSSI desc then nickname/rawName
   const list = Object.values(discovered).sort((a, b) => {
     const ra = typeof a.rssi === "number" ? a.rssi : -9999;
     const rb = typeof b.rssi === "number" ? b.rssi : -9999;
@@ -127,21 +131,18 @@ function computeVisibleDevices(
 }
 
 const API_BASE =
-  (import.meta as any).env?.VITE_API_BASE?.replace(/\/+$/, "") || "";
-const SCAN_DURATION_MS = 20_000;
+  (import.meta as any)?.env?.VITE_API_BASE?.trim() || "http://127.0.0.1:8000";
 
 /* -------------------------------------------------------
    Store
 ------------------------------------------------------- */
-export const useAppStore = create<AppState>()(
+export const useAppStore = create<RootState>()(
   devtools((set, get) => ({
-    /* ---------------- Config ---------------- */
     config: {
       projectFamilies: [],
-      selectedFamilyId: loadJSON(LS_FAMILY, ""),
+      selectedFamilyId: "ALL",
     },
 
-    /* ---------------- BLE ---------------- */
     ble: {
       devices: [],
       scanning: false,
@@ -154,7 +155,6 @@ export const useAppStore = create<AppState>()(
       nicknameDraft: "",
     },
 
-    /* ---------------- Analyzer ---------------- */
     analyzer: {
       ip: "172.16.10.1",
       port: "5555",
@@ -162,7 +162,6 @@ export const useAppStore = create<AppState>()(
       connected: false,
     },
 
-    /* ---------------- Actions ---------------- */
     actions: {
       async loadProjectFamilies() {
         const list: ProjectFamily[] = [
@@ -179,10 +178,12 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
-      setSelectedFamily(id: string) {
-        saveJSON(LS_FAMILY, id);
+      setSelectedFamily(id) {
         set((s) => ({
-          config: { ...s.config, selectedFamilyId: id },
+          config: {
+            ...s.config,
+            selectedFamilyId: id,
+          },
           ble: {
             ...s.ble,
             devices: computeVisibleDevices(s.ble.discovered, id),
@@ -190,15 +191,14 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
-      /* ------- SSE scan with batched flush to keep scrolling smooth ------- */
+      /* -------- BLE scan stream (SSE) -------- */
       bleScanStream() {
+        const SCAN_DURATION_MS = 10000;
+        const deadline = Date.now() + SCAN_DURATION_MS;
         if (activeSse) {
           try { activeSse.close(); } catch {}
           activeSse = null;
         }
-
-        const deadline = Date.now() + SCAN_DURATION_MS;
-        // NOTE: don't wipe nicknames/assignments; keep discovered clean slate for fresh list
         set((s) => ({
           ble: {
             ...s.ble,
@@ -213,7 +213,6 @@ export const useAppStore = create<AppState>()(
           SCAN_DURATION_MS / 1000
         )}`;
 
-        // Batch incoming events to avoid a re-render per packet
         const pending = new Map<string, { mac: string; name?: string | null; rssi?: number | null }>();
         let flushTimer: number | null = null;
         const FLUSH_EVERY_MS = 120;
@@ -229,34 +228,29 @@ export const useAppStore = create<AppState>()(
             for (const msg of updates) {
               const prev = disc[msg.mac] || { mac: msg.mac } as BleDevice;
 
-              // rawName: only accept truthy incoming name
-              const nextRawName =
-                (msg.name && String(msg.name).trim().length > 0)
-                  ? msg.name
+              const nextName =
+                msg.name != null && String(msg.name).trim() !== ""
+                  ? String(msg.name)
                   : prev.rawName ?? null;
-
-              // rssi: accept numeric only; never overwrite with null/undefined
-              const nextRssi =
-                typeof msg.rssi === "number"
-                  ? msg.rssi
-                  : (typeof prev.rssi === "number" ? prev.rssi : null);
 
               disc[msg.mac] = {
                 ...prev,
-                rawName: nextRawName,
-                rssi: nextRssi,
-                // keep nickname & assignment
-                nickname: prev.nickname ?? s.ble.nicknames[msg.mac] ?? null,
+                rawName: nextName,
+                rssi: typeof msg.rssi === "number" ? msg.rssi : prev.rssi ?? null,
                 assignedProject: prev.assignedProject ?? s.ble.assignments[msg.mac] ?? null,
+                nickname: s.ble.nicknames[msg.mac] ?? prev.nickname ?? null,
               };
             }
 
-            const nextVisible = computeVisibleDevices(
-              disc,
-              s.config.selectedFamilyId
-            );
+            const vis = computeVisibleDevices(disc, s.config.selectedFamilyId);
 
-            return { ble: { ...s.ble, discovered: disc, devices: nextVisible } };
+            return {
+              ble: {
+                ...s.ble,
+                discovered: disc,
+                devices: vis,
+              },
+            };
           });
         };
 
@@ -264,41 +258,39 @@ export const useAppStore = create<AppState>()(
         activeSse = es;
 
         es.onmessage = (ev) => {
-          let raw: any;
-          try { raw = JSON.parse(ev.data); } catch { return; }
-          if (!raw || typeof raw !== "object" || !raw.mac) return;
-          // queue minimal fields; backend sends {mac, name, rssi}
-          pending.set(raw.mac, { mac: raw.mac, name: raw.name ?? null, rssi: raw.rssi });
-          if (flushTimer == null) {
-            flushTimer = window.setTimeout(flush, FLUSH_EVERY_MS) as unknown as number;
+          try {
+            const data = JSON.parse(ev.data);
+            const mac  = data?.mac;
+            if (!mac) return;
+            const name = data?.name ?? null;
+            const rssi = typeof data?.rssi === "number" ? data.rssi : null;
+            pending.set(mac, { mac, name, rssi });
+
+            if (flushTimer == null) {
+              flushTimer = window.setTimeout(flush, FLUSH_EVERY_MS);
+            }
+          } catch {
+            // ignore malformed
           }
         };
 
-        es.addEventListener("done", () => {
-          if (flushTimer != null) { window.clearTimeout(flushTimer); flushTimer = null; }
-          flush();
-          try { es.close(); } catch {}
-          if (activeSse === es) activeSse = null;
-          set((s) => ({ ble: { ...s.ble, scanning: false, scanEndsAt: null } }));
-        });
-
         es.onerror = () => {
-          // best-effort close & end scan
-          if (flushTimer != null) { window.clearTimeout(flushTimer); flushTimer = null; }
-          flush();
           try { es.close(); } catch {}
           if (activeSse === es) activeSse = null;
+          if (flushTimer != null) { window.clearTimeout(flushTimer); flushTimer = null; }
+          flush();
           set((s) => ({ ble: { ...s.ble, scanning: false, scanEndsAt: null } }));
         };
 
-        // Hard-stop UI at deadline (guard)
         window.setTimeout(() => {
           if (activeSse === es) {
             try { es.close(); } catch {}
             activeSse = null;
             if (flushTimer != null) { window.clearTimeout(flushTimer); flushTimer = null; }
             flush();
-            set((s) => ({ ble: { ...s.ble, scanning: false, scanEndsAt: null } }));
+            set((s) => ({ 
+              ble: { ...s.ble, scanning: false, scanEndsAt: null } 
+            }));
           }
         }, SCAN_DURATION_MS + 300);
       },
@@ -311,34 +303,45 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ ble: { ...s.ble, scanning: false, scanEndsAt: null } }));
       },
 
-      /* -------- Assign selected project (by family id) -------- */
+      /* -------- Assign selected project -------- */
       bleAssign(mac, familyId) {
         set((s) => {
-          const assignments = { ...s.ble.assignments, [mac]: familyId };
-          saveJSON(LS_ASSIGN, assignments);
+          const nextAssignments = { ...s.ble.assignments, [mac]: familyId };
+          saveJSON(LS_ASSIGN, nextAssignments);
 
-          const prev = s.ble.discovered[mac] || { mac } as BleDevice;
-          const updated = { ...prev, assignedProject: familyId };
+          const disc = { ...s.ble.discovered };
+          if (disc[mac]) disc[mac] = { ...disc[mac], assignedProject: familyId };
 
-          const discovered = { ...s.ble.discovered, [mac]: updated };
-          const devices = s.ble.devices.map((d) => (d.mac === mac ? updated : d));
+          const devices = s.ble.devices.map((d) =>
+            d.mac === mac ? { ...d, assignedProject: familyId } : d
+          );
 
-          return { ble: { ...s.ble, assignments, discovered, devices } };
+          return {
+            ble: {
+              ...s.ble,
+              assignments: nextAssignments,
+              discovered: disc,
+              devices,
+            },
+          };
         });
       },
 
-      /* -------- Nickname modal flow -------- */
       openNicknameModal(mac, initialDraft) {
         set((s) => ({
           ble: {
             ...s.ble,
             nicknameModalOpen: true,
             nicknameModalMac: mac,
-            nicknameDraft: initialDraft ?? s.ble.nicknames[mac] ?? "",
+            nicknameDraft:
+              initialDraft ??
+              s.ble.nicknames[mac] ??
+              s.ble.discovered[mac]?.nickname ??
+              s.ble.discovered[mac]?.rawName ??
+              "",
           },
         }));
       },
-
       closeNicknameModal() {
         set((s) => ({
           ble: {
@@ -349,28 +352,26 @@ export const useAppStore = create<AppState>()(
           },
         }));
       },
-
       setNicknameDraft(v) {
         set((s) => ({ ble: { ...s.ble, nicknameDraft: v } }));
       },
-
       saveNickname(mac, nickname) {
         set((s) => {
-          const nicknames = { ...s.ble.nicknames, [mac]: nickname };
-          saveJSON(LS_NICK, nicknames);
+          const next = { ...s.ble.nicknames, [mac]: nickname };
+          saveJSON(LS_NICK, next);
 
-          // update discovered & devices without altering rawName
-          const prev = s.ble.discovered[mac] || { mac } as BleDevice;
-          const updated = { ...prev, nickname };
+          const disc = { ...s.ble.discovered };
+          if (disc[mac]) disc[mac] = { ...disc[mac], nickname };
 
-          const discovered = { ...s.ble.discovered, [mac]: updated };
-          const devices = s.ble.devices.map((d) => (d.mac === mac ? updated : d));
+          const devices = s.ble.devices.map((d) =>
+            d.mac === mac ? { ...d, nickname } : d
+          );
 
           return {
             ble: {
               ...s.ble,
-              nicknames,
-              discovered,
+              nicknames: next,
+              discovered: disc,
               devices,
               nicknameModalOpen: false,
               nicknameModalMac: null,
@@ -380,17 +381,13 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      /* -------- Connect / Disconnect -------- */
       async bleConnect(mac) {
         set((s) => ({
           ble: {
             ...s.ble,
             discovered: {
               ...s.ble.discovered,
-              [mac]: {
-                ...(s.ble.discovered[mac] || { mac }),
-                connecting: true,
-              },
+              [mac]: { ...(s.ble.discovered[mac] || { mac }), connecting: true },
             },
             devices: s.ble.devices.map((d) =>
               d.mac === mac ? { ...d, connecting: true } : d
@@ -438,27 +435,13 @@ export const useAppStore = create<AppState>()(
       },
 
       async bleDisconnect(mac) {
-        set((s) => ({
-          ble: {
-            ...s.ble,
-            discovered: {
-              ...s.ble.discovered,
-              [mac]: {
-                ...(s.ble.discovered[mac] || { mac }),
-                connecting: true,
-              },
-            },
-            devices: s.ble.devices.map((d) =>
-              d.mac === mac ? { ...d, connecting: true } : d
-            ),
-          },
-        }));
         try {
           await fetch(`${API_BASE}/api/ble/disconnect`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mac }),
           }).catch(() => {});
+        } finally {
           set((s) => ({
             ble: {
               ...s.ble,
@@ -474,23 +457,21 @@ export const useAppStore = create<AppState>()(
               ),
             },
           }));
-        } finally {
-          set((s) => ({
-            ble: {
-              ...s.ble,
-              discovered: {
-                ...s.ble.discovered,
-                [mac]: {
-                  ...(s.ble.discovered[mac] || { mac }),
-                  connecting: false,
-                },
-              },
-              devices: s.ble.devices.map((d) =>
-                d.mac === mac ? { ...d, connecting: false } : d
-              ),
-            },
-          }));
         }
+      },
+
+      /* analyzer setters used by AnalyzerConnection.tsx */
+      setAnalyzerState(patch) {
+        set((s) => ({ analyzer: { ...s.analyzer, ...patch } }));
+      },
+      setAnalyzerIp(ip) {
+        set((s) => ({ analyzer: { ...s.analyzer, ip } }));
+      },
+      setAnalyzerPort(port) {
+        set((s) => ({ analyzer: { ...s.analyzer, port } }));
+      },
+      setAnalyzerModel(model) {
+        set((s) => ({ analyzer: { ...s.analyzer, model } }));
       },
 
       analyzerConnect() {
