@@ -1,6 +1,8 @@
+/* stylelint-disable at-rule-no-unknown */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* stylelint-enable at-rule-no-unknown */
 
 /* Surfaces */
 .card,
@@ -8,7 +10,7 @@
   @apply rounded-2xl bg-card-bg border border-[color:var(--tw-color-card-border)] shadow-card;
 }
 :root {
-  --tw-color-card-border: theme(colors.card.border);
+  --tw-color-card-border: theme("colors.card.border");
 }
 
 /* Inputs (light) */
@@ -61,10 +63,10 @@
 .icon-bubble {
   background: linear-gradient(
     180deg,
-    theme(colors.primary.50) 0%,
+    theme("colors.primary.50") 0%,
     #ffffff 100%
   );
-  color: theme(colors.primary.700);
+  color: theme("colors.primary.700");
   @apply inline-flex h-7 w-7 items-center justify-center rounded-full;
 }
 

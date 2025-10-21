@@ -1,169 +1,223 @@
-/* ===== Base / layout ===== */
-.tsq-container {
-  padding: 0 12px;
+/*
+Root Colors
+*/
+:root {
+  --sub-text-color: #757575;
+  --tsq-btn-border-color: #ebe7e5;
+  --tsq-btn-primary: #6b77f7;
+  --tsq-btn-ghost: #f0f0f0;
+  --text-light: #fff;
+  --text-dark: #000;
+  --proto-tab-active-bg: #ffffff;
+  --proto-tab-active-bd: #ebe5e596;
+  --box-shadow-dark: rgba(17, 24, 39, 0.06);
+  --proto-badge: #858fe2d7;
+  --tsq-test-card-bd: #ebe5e596;
+  --text-gray: #80706b;
+  --tsq-icon-btn-hover-bg: #f3f4f6;
+  --tsq-icon-btn-danger: #b91c1c;
+  --input-card-bd: #e5e7eb;
+  --scrol-bar-color: rgb(114 115 123 / 50%);
+  --tsq-card-hover-bg: #f9fafb;
 }
-.tsq-header {
+
+/* ------------------------------
+   PAGE & LAYOUT 
+   ------------------------------ */
+
+.configurations-page {
   display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin: 12px 0 8px;
-}
-.tsq-title {
-  font-weight: 700;
-  font-size: 20px;
-}
-.tsq-subtitle {
-  color: #6b7280;
-  font-size: 13px;
-}
-.tsq-total {
-  margin-left: auto;
-  color: #6b7280;
-  font-size: 13px;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--background, #f7f8fa);
 }
 
-.tsq-grid {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 16px;
-}
-@media (max-width: 1024px) {
-  .tsq-grid {
-    grid-template-columns: 1fr;
-  }
+.tsq-card-like {
+  background: var(--card-bg, #ffffff);
+  border-radius: 1rem;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
 }
 
-.tsq-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 0 14px;
-}
-
-/* reserve space for a scrollbar (prevents layout jump) */
-.tsq-builder,
-.tsq-builder-inner {
-  overflow-y: auto;
-  scrollbar-gutter: stable; /* keep a constant gutter */
-  scrollbar-width: thin; /* Firefox: thin scrollbar */
-}
-
-/* WebKit (Chrome/Edge/Safari) thin width */
-.tsq-builder::-webkit-scrollbar,
-.tsq-builder-inner::-webkit-scrollbar {
-  width: 10px; /* the "skeleton" width to reserve */
-  height: 10px;
-}
-
-/* make the track faint so you see a subtle skeleton groove */
-.tsq-builder::-webkit-scrollbar-track,
-.tsq-builder-inner::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-/* keep thumb nearly invisible, show on hover */
-.tsq-builder::-webkit-scrollbar-thumb,
-.tsq-builder-inner::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 8px;
-}
-
-.tsq-builder:hover::-webkit-scrollbar-thumb,
-.tsq-builder-inner:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.28);
-}
-
-/* Firefox equivalents */
-.tsq-builder,
-.tsq-builder-inner {
-  /* default: invisible-ish thumb, faint track effect is limited in FF */
-  scrollbar-color: transparent rgba(0, 0, 0, 0.04);
-}
-.tsq-builder:hover,
-.tsq-builder-inner:hover {
-  scrollbar-color: rgba(0, 0, 0, 0.35) rgba(0, 0, 0, 0.04);
-}
-
+/* ------------------------------
+   CARD HEAD / TOOLBAR (sticky)
+   ------------------------------ */
 .tsq-card-head {
   position: sticky;
   top: 0;
-  z-index: 1; /* above the list content */
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-
-  /* Visuals so it looks like a fixed toolbar */
   background: var(--card-bg, #fff);
-  /* If your card has padding, match it here too */
   padding: 12px 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
+.tsq-head-left {
+  display: flex;
+  flex-direction: column;
+}
 .tsq-card-title {
   font-weight: 600;
+  margin-left: 8px;
+}
+.tsq-card-title.mt-2 {
+  margin-top: 6px;
+  margin-left: 9px;
 }
 .tsq-card-sub {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--sub-text-color);
   margin-top: 4px;
+  margin-left: 9px;
 }
 
-/* ===== Buttons ===== */
+/* ------------------------------
+   SCROLL AREAS — STABLE SCROLLBAR
+   Prevent layout shift when scrollbar appears
+   ------------------------------ */
+.tsq-builder {
+  height: calc(100vh - 220px);
+  min-height: 480px;
+  max-height: calc(100vh - 220px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1rem;
+}
+
+.tsq-library-scroll {
+  flex-grow: 1;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107, 119, 247, 0.5) transparent;
+}
+
+.tsq-card-body::-webkit-scrollbar,
+.tsq-library-scroll::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.tsq-card-body::-webkit-scrollbar-track,
+.tsq-library-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tsq-card-body::-webkit-scrollbar-thumb,
+.tsq-library-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(107, 119, 247, 0.4);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.tsq-card-body::-webkit-scrollbar-thumb:hover,
+.tsq-library-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(107, 119, 247, 0.7);
+}
+
+/* WebKit: consistent custom width so space is always reserved */
+.tsq-builder::-webkit-scrollbar,
+.tsq-library-scroll::-webkit-scrollbar {
+  width: 12px; /* fixed width to avoid width jumps */
+  height: 12px;
+}
+.tsq-builder::-webkit-scrollbar-track,
+.tsq-library-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tsq-builder::-webkit-scrollbar-thumb,
+.tsq-library-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(107, 119, 247, 0.4);
+  border-radius: 6px;
+  border: 3px solid transparent; /* extra padding for nicer look */
+  background-clip: content-box;
+}
+.tsq-builder::-webkit-scrollbar-thumb:hover,
+.tsq-library-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(107, 119, 247, 0.7);
+}
+
+/* Firefox (and others) colors */
+.tsq-builder,
+.tsq-library-scroll {
+  scrollbar-width: thin; /* keep consistent thin feel */
+  scrollbar-color: rgb(114 115 123 / 50%) transparent;
+}
+
+/* ------------------------------
+   ACTION BUTTONS
+   ------------------------------ */
 .tsq-actions {
   display: flex;
   gap: 8px;
+  align-self: flex-start;
+  margin-top: 12px;
 }
 .tsq-btn {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--tsq-btn-border-color);
   border-radius: 12px;
   padding: 8px 12px;
   font-size: 13px;
-  background: #fff;
   transition: transform 0.06s ease;
 }
 .tsq-btn:hover {
   transform: translateY(-1px);
 }
 .tsq-btn.primary {
-  background: #6b77f7;
-  color: #fff;
-  border-color: #6b77f7;
+  background: var(--tsq-btn-primary);
+  color: var(--text-light);
+  /* border-color: var(--tsq-btn-primary); */
 }
 .tsq-btn.ghost {
-  background: #fff;
-  color: #000000;
+  background: var(--tsq-btn-ghost);
+  color: var(--text-dark);
 }
 
-/* ===== Tabs with colored bubbles ===== */
-.tsq-tabs {
-  display: flex;
+/* ------------------------------
+   PROTOCOL TABS (segmented control, name + count only)
+   ------------------------------ */
+.proto-tabs {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  margin: 8px 0 14px;
+  /* background: linear-gradient(180deg, #fbfbfd, #f3f4f8); */
+  /* border: 1px solid #e7e9f2; */
+  border-radius: 14px;
+  padding: 6px 0;
 }
-.tsq-tab {
-  position: relative;
+
+.proto-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid transparent;
-  background: #f6f7fb;
+  background: transparent;
   font-size: 14px;
-  transition: box-shadow 0.15s ease, transform 0.08s ease;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease,
+    border-color 0.15s ease;
 }
-.tsq-tab:hover {
+.proto-pill:hover {
   transform: translateY(-1px);
 }
-.tsq-tab.is-active {
-  background: #fff;
-  border-color: #e5e7eb;
-  box-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
+.proto-pill.is-active {
+  background: var(--proto-tab-active-bg);
+  border-color: var(--proto-tab-active-bd);
+  box-shadow: 0 6px 18px var(--box-shadow-dark);
 }
-
-.tsq-badge {
+.proto-label {
+  font-weight: 600;
+}
+.proto-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -171,125 +225,99 @@
   height: 18px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #9da6f3;
+  background: var(--proto-badge);
   font-size: 12px;
-  color: #ffffff;
-  font-weight: 600;
+  color: var(--text-light);
+  font-weight: 700;
 }
-.tsq-badge.has-count {
-  color: #fff;
-}
-.tsq-badge-lora {
-  background: #22c55e;
-} /* LoRa: green */
-.tsq-badge-lte {
-  background: #0ea5e9;
-} /* LTE: blue */
-.tsq-badge-ble {
-  background: #a855f7;
-} /* BLE: purple */
-
-/* ===== Builder & Library ===== */
-.tsq-builder {
-  height: 690px;
-  overflow-y: auto; /* scroll only vertically */
-  overflow-x: hidden;
-  position: relative; /* creates a stacking context for the sticky header */
-  transition: box-shadow 0.18s ease, border-color 0.18s ease;
-  padding-bottom: 12px;
+.proto-pill:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(107, 119, 247, 0.35);
+  border-color: #cfd5ff;
+  background: #ffffff;
 }
 
-.tsq-builder.is-drop-target {
-  border-color: #6b77f7;
-  box-shadow: 0 0 0 3px rgba(107, 119, 247, 0.18) inset,
-    0 10px 26px rgba(17, 24, 39, 0.06);
-}
-
-.tsq-dropzone {
-  margin-top: 12px;
-  border: 1px dashed #d1d5db;
-  border-radius: 12px;
-  background: linear-gradient(0deg, #ffffff, #fafafa);
-  min-height: 590px;
+/* ------------------------------
+   EMPTY STATE
+   ------------------------------ */
+.tsq-empty-wrap {
   display: grid;
   place-items: center;
   text-align: center;
-  color: #6b7280;
-  font-size: 13px;
+  min-height: max(40vh, 360px);
+  color: var(--text-dark);
+  align-content: center;
 }
-
-.tsq-library {
-  max-height: calc(100vh - 210px);
-  display: flex;
-  flex-direction: column;
-}
-.tsq-library-list {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: auto;
-  padding-right: 4px;
-}
-.tsq-lib-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: grab;
-  transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-.tsq-lib-item:active {
-  cursor: grabbing;
-}
-.tsq-lib-item:hover {
-  background: #f9fafb;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.06);
-}
-
-.tsq-quick {
-  margin-top: 12px;
-}
-.tsq-quick-title {
-  font-weight: 600;
-  font-size: 13px;
+.tsq-empty-icon {
+  font-size: 28px;
   margin-bottom: 6px;
 }
-.tsq-quick-grid {
-  display: grid;
-  gap: 8px;
+.tsq-empty-title {
+  font-weight: 600;
+}
+.tsq-empty-sub {
+  font-size: 13px;
 }
 
-/* ===== Tests list / cards ===== */
-.tsq-tests {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.tsq-test {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+/* ------------------------------
+   TEST CARDS
+   ------------------------------ */
+.tsq-test-card {
+  border: 1px solid var(--tsq-test-card-bd);
+  border-radius: 1rem;
   overflow: hidden;
-  background: #fff;
+  background: var(--card-bg, #fff);
   transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease,
     margin 0.12s ease;
-  will-change: transform, box-shadow, margin;
+  box-shadow: 0 0 8px var(--box-shadow-dark);
+  margin-top: 10px;
 }
+
+/* ------------------------------------------------
+   Test Card Head — with soft separator line
+   ------------------------------------------------ */
 .tsq-test-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  background: linear-gradient(0deg, #fcfcfd, #ffffff);
+  position: relative;
+
+  /* keep top corners round when closed */
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
+
+  /* subtle surface gradient to distinguish header */
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+
+  /* optional shadow for better separation when closed */
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
 }
+
+/* separator "bar" effect at bottom of header */
+.tsq-test-head::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.05) 0%,
+    rgba(0, 0, 0, 0.08) 50%,
+    rgba(0, 0, 0, 0.05) 100%
+  );
+  transition: opacity 0.2s ease;
+}
+
+/* When card is open, hide the separator (so head blends into body) */
+.tsq-test-card.is-open .tsq-test-head::after {
+  opacity: 0;
+}
+
 .tsq-test-title {
   font-weight: 600;
   display: flex;
@@ -297,9 +325,10 @@
   gap: 8px;
 }
 .tsq-test-proto {
-  color: #6b7280;
+  color: var(--text-gray);
   font-weight: 500;
 }
+
 .tsq-test-drag-handle {
   opacity: 0.5;
   display: inline-grid;
@@ -310,113 +339,81 @@
 .tsq-test-drag-handle:active {
   cursor: grabbing;
 }
-.tsq-test:hover .tsq-test-drag-handle {
+.tsq-test-card:hover .tsq-test-drag-handle {
   opacity: 0.7;
   transform: translateY(-1px);
 }
+
 .tsq-test-body {
   padding: 12px;
-  background: #fff;
-  border-top: 1px solid #eef0f3;
+  background: var(--card-bg, #fff);
 }
-.tsq-test.is-min .tsq-test-body {
-  display: none;
-}
-
 .tsq-title-toggle {
   display: inline-flex;
-  align-items: center; /* centers caret vertically with the text */
+  align-items: center;
   gap: 8px;
   cursor: pointer;
   padding: 0;
   background: none;
   border: 0;
-  line-height: 1; /* keeps the line compact so centering is exact */
+  line-height: 1;
 }
-
 .tsq-title-text {
   display: inline-flex;
   align-items: center;
 }
-
 .tsq-title-caret {
-  display: inline-grid; /* gives us a square box around the SVG */
-  place-items: center; /* centers the icon perfectly in that box */
-  line-height: 0; /* removes extra inline spacing around SVG */
+  display: inline-grid;
+  place-items: center;
+  line-height: 0;
   transform-origin: 50% 50%;
   transition: transform 180ms ease;
-  transform: rotate(-90deg); /* collapsed = right */
+  transform: rotate(-90deg);
 }
-
 .tsq-title-caret.is-open {
-  transform: rotate(0deg); /* expanded = down */
+  transform: rotate(0deg);
 }
 
 .tsq-icon-btn {
-  background: #fff;
+  /* background: var(--background, #fff); */
   border-radius: 10px;
-  padding: 6px 8px;
-  font-size: 12px;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
   transition: transform 0.08s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .tsq-icon-btn:hover {
-  background: #f3f4f6;
+  background: var(--tsq-icon-btn-hover-bg);
   transform: translateY(-1px);
 }
+
 .tsq-icon-btn.danger {
-  color: #b91c1c;
+  color: var(--tsq-icon-btn-danger);
 }
 
-/* ===== Dragging animation (modern & intuitive) ===== */
-.tsq-test.is-dragging {
+/* drag feedback */
+.tsq-test-card.is-dragging {
   transform: translateY(-2px) scale(0.985) rotate(0.25deg);
   box-shadow: 0 14px 30px rgba(17, 24, 39, 0.18);
-  border-color: #cbd2ff;
+  /* border-color: #cbd2ff; */
   background: #fff;
   opacity: 0.98;
 }
-
-/* Drop position cue: top/bottom bars + breathing space */
-.tsq-test.is-over.is-before {
-  box-shadow: 0 -3px 0 0 #6b77f7 inset,
+.tsq-test-card.is-over-below {
+  box-shadow: 0 -3px 0 0 var(--tsq-btn-primary) inset,
     0 0 0 1px rgba(107, 119, 247, 0.15) inset;
   margin-top: 10px;
 }
-.tsq-test.is-over.is-after {
-  box-shadow: 0 3px 0 0 #6b77f7 inset, 0 0 0 1px rgba(107, 119, 247, 0.15) inset;
+.tsq-test-card.is-over-above {
+  box-shadow: 0 3px 0 0 var(--tsq-btn-primary) inset,
+    0 0 0 1px rgba(107, 119, 247, 0.15) inset;
   margin-bottom: 10px;
 }
 
-/* Gentle reflow when list changes */
-@keyframes tsq-reflow {
-  0% {
-    transform: scale(0.995);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-.tsq-tests > .tsq-test {
-  animation: tsq-reflow 0.14s ease;
-}
-
-/* Subtle “pop” when a new card is added */
-@keyframes tsq-pop {
-  0% {
-    transform: translateY(6px);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-.tsq-test {
-  animation: tsq-pop 0.18s ease;
-}
-
-/* ===== Form ===== */
+/* ------------------------------
+   FORMS
+   ------------------------------ */
 .tsq-form-row {
   display: flex;
   flex-direction: column;
@@ -428,112 +425,6 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
-@media (max-width: 900px) {
-  .tsq-form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.tsq-input {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 13px;
-  background: #fff;
-}
-.tsq-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.tsq-card-body {
-  display: flex;
-  flex-direction: column;
-  margin: 8px 0;
-  gap: 5px;
-}
-
-/* ===== Desktop sizing system ===== */
-:root {
-  /* Fluid type scale for desktop-only */
-  --tsq-fs-sm: clamp(12px, 0.85vw, 13px);
-  --tsq-fs-md: clamp(13px, 0.95vw, 15px);
-  --tsq-fs-lg: clamp(16px, 1.2vw, 20px);
-  --tsq-pad-sm: clamp(6px, 0.6vw, 8px);
-  --tsq-pad-md: clamp(8px, 0.8vw, 14px);
-  --tsq-radius: 12px;
-}
-
-/* Replace hard px font-sizes with tokens */
-.tsq-title {
-  font-size: var(--tsq-fs-lg);
-} /* was 20px */
-.tsq-subtitle,
-.tsq-total {
-  font-size: var(--tsq-fs-sm);
-} /* was 13px */
-
-.tsq-card {
-  border-radius: calc(var(--tsq-radius) + 2px);
-  padding: 0 var(--tsq-pad-md);
-}
-.tsq-btn {
-  padding: var(--tsq-pad-sm) var(--tsq-pad-md);
-  font-size: var(--tsq-fs-sm);
-}
-
-/* ===== Responsive grid improvements ===== */
-.tsq-grid {
-  display: grid;
-  grid-template-columns: 1fr 380px; /* default */
-  gap: 16px;
-}
-
-/* Small desktop/narrow window (<= 1200): stack */
-@media (max-width: 1200px) {
-  .tsq-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Large desktop (>= 1440): widen the right pane a bit */
-@media (min-width: 1440px) {
-  .tsq-grid {
-    grid-template-columns: 1fr 420px;
-  }
-}
-
-/* Ultrawide (>= 1920): give the builder breathing room & a wider library */
-@media (min-width: 1920px) {
-  .tsq-grid {
-    grid-template-columns: 1.2fr 460px;
-  }
-}
-
-/* ===== Make heights use the viewport, not fixed px ===== */
-/* Reserve vertical space based on the viewport minus your app header/footer.
-   Adjust the 180px constant to match your actual header/toolbars height. */
-.tsq-builder {
-  height: calc(100vh - 220px); /* was 690px */
-  min-height: 480px; /* safety on tiny windows */
-  max-height: calc(100vh - 220px); /* keep some bottom margin */
-}
-
-/* The dropzone should follow the builder height, not be fixed */
-.tsq-dropzone {
-  min-height: max(40vh, 360px); /* was 590px */
-}
-
-/* Library panel scales too */
-.tsq-library {
-  max-height: calc(100vh - 220px); /* was calc(100vh - 210px) */
-}
-
-/* Forms: add an intermediate & large layout */
-.tsq-form-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
 @media (max-width: 1100px) {
   .tsq-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -542,27 +433,56 @@
 @media (max-width: 900px) {
   .tsq-form-grid {
     grid-template-columns: 1fr;
-  } /* you already had this */
-}
-@media (min-width: 1600px) {
-  .tsq-form-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
-/* Tests list density: relax on big screens, tighten on small */
-@media (max-width: 1200px) {
-  .tsq-tests {
-    gap: 8px;
-  }
-}
-@media (min-width: 1600px) {
-  .tsq-tests {
-    gap: 12px;
-  }
+.tsq-input {
+  border: 1px solid var(--input-card-bd);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: #fff;
 }
 
-/* Sticky header: ensure it stays visible under app header */
-.tsq-card-head {
-  top: 0px;
-} /* change to your app’s actual top offset if needed */
+/* ------------------------------
+   LIBRARY
+   ------------------------------ */
+.tsq-card-body {
+  flex-grow: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 12px;
+
+  /* Stable scrollbar: prevent content width change */
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrol-bar-color) transparent;
+  margin-top: 5px;
+}
+
+.tsq-lib-item {
+  border: 1px solid var(--tsq-test-card-bd);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: grab;
+  transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+  margin-top: 8px;
+}
+
+.tsq-lib-item:hover {
+  background: var(--tsq-card-hover-bg);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px var(--box-shadow-dark);
+}
+
+.tsq-lib-name {
+  font-weight: 600;
+}
+.tsq-lib-sub {
+  font-size: 12px;
+  color: var(--sub-text-color);
+}

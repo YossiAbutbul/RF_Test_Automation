@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import BleScanner from "@/components/ble/BleScanner";
 import { useAppStore } from "@/state/appStore";
+import { RefreshCw, Trash2, Edit3 } from "lucide-react";
 import "./css/Configurations.css";
 
 export default function Configurations() {
@@ -28,55 +29,54 @@ export default function Configurations() {
         {/* Analyzer Connection (right column) */}
         <Card className="p-4">
           <div className="text-base font-medium">Analyzer Connection</div>
+
+          {/* Optional: small action icons at the top right of the card header */}
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button className="tsq-icon-btn" title="Refresh">
+              <RefreshCw />
+            </button>
+            <button className="tsq-icon-btn" title="Edit connection">
+              <Edit3 />
+            </button>
+            <button className="tsq-icon-btn danger" title="Clear settings">
+              <Trash2 />
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-sm">
             <div>
-              <label className="text-xs text-zinc-500">IP Address</label>
+              <label className="tsq-field-label">IP Address</label>
               <input
-                className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
+                className="tsq-input"
                 defaultValue={anIp}
                 readOnly
               />
             </div>
             <div>
-              <label className="text-xs text-zinc-500">Port</label>
+              <label className="tsq-field-label">Port</label>
               <input
-                className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
+                className="tsq-input"
                 defaultValue={anPort}
                 readOnly
               />
             </div>
             <div>
-              <label className="text-xs text-zinc-500">Model</label>
-              <div className="w-full mt-1 rounded-xl border px-3 py-2 bg-white">
+              <label className="tsq-field-label">Model</label>
+              <div className="tsq-input" style={{ display: "flex", alignItems: "center" }}>
                 {anModel}
               </div>
             </div>
-            <div>
-              <label className="text-xs text-zinc-500">Status</label>
-              <div className="mt-1">
-                <span
-                  className={`inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium ${
-                    anConnected ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
-                  }`}
-                >
-                  {anConnected ? "Connected" : "Disconnected"}
-                </span>
-              </div>
-            </div>
+            
           </div>
-          <div className="mt-4 flex justify-end">
+
+          {/* Primary actions — same style as Test Sequence .tsq-btn */}
+          <div className="mt-4 flex justify-end gap-2">
             {anConnected ? (
-              <button
-                className="px-3 py-2 rounded-xl bg-rose-500 text-white"
-                onClick={analyzerDisconnect}
-              >
+              <button className="tsq-btn ghost" onClick={analyzerDisconnect}>
                 Disconnect
               </button>
             ) : (
-              <button
-                className="px-3 py-2 rounded-xl bg-emerald-500 text-white"
-                onClick={analyzerConnect}
-              >
+              <button className="tsq-btn primary" onClick={analyzerConnect}>
                 Connect
               </button>
             )}

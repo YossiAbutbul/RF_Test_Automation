@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
-import { Bluetooth, Plus, Pencil, Edit3, RefreshCcw, X, PlugZap, Plug, StopCircle } from "lucide-react";
+import { Bluetooth, Edit3, RefreshCcw, X, StopCircle } from "lucide-react";
 import { useAppStore } from "@/state/appStore";
 import type { ProjectFamily, BleDevice } from "@/state/appStore";
 
-// Deterministic color for nickname tag
+/** deterministic color palette for nickname pill */
 function hslFromLabel(label: string) {
   let h = 0;
   for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) >>> 0;
@@ -22,7 +22,7 @@ function tagPalette(label: string) {
 }
 
 export default function BleScanner() {
-  // ------------ Selectors ------------
+  // ------------ Store selectors ------------
   const projectFamilies = useAppStore((s) => s.config.projectFamilies) as ProjectFamily[];
   const selectedFamilyId = useAppStore((s) => s.config.selectedFamilyId) as string;
 
@@ -61,7 +61,7 @@ export default function BleScanner() {
     [projectFamilies, selectedFamilyId]
   );
 
-  // Countdown UI for scan (purely visual)
+  // small timer for scan countdown display
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!scanning || !scanEndsAt) return;
@@ -106,9 +106,9 @@ export default function BleScanner() {
         {/* Project family + Scan/Stop */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-2">
-            <label className="text-xs text-zinc-500">Project family</label>
+            <label className="tsq-field-label">Project family</label>
             <select
-              className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
+              className="tsq-select"
               value={selectedFamilyId || ""}
               onChange={(e) => setSelectedFamily(e.target.value)}
             >
@@ -122,7 +122,7 @@ export default function BleScanner() {
 
           <div className="flex items-end gap-2">
             <button
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white border hover:bg-zinc-50 disabled:opacity-60"
+              className="tsq-btn ghost"
               onClick={handleScan}
               disabled={scanning || !selectedFamilyId}
               title={selectedFamilyId ? "Scan for BLE devices" : "Select a project family first"}
@@ -138,7 +138,7 @@ export default function BleScanner() {
 
             {scanning && (
               <button
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white border hover:bg-zinc-50"
+                className="tsq-btn ghost"
                 onClick={handleCancel}
                 title="Stop scan"
               >
@@ -153,7 +153,6 @@ export default function BleScanner() {
       {/* Scrollable table area */}
       <div className="table-scroll">
         <div className="overflow-hidden">
-          {/* Fixed layout + colgroup: Nickname auto-fills remaining width */}
           <table className="w-full text-sm table-fixed">
             <colgroup>
               {/* Device: enough room for icon + 2 lines */}
@@ -179,69 +178,21 @@ export default function BleScanner() {
             </thead>
 
             <tbody className="divide-y">
-                {scanning && bleDevices.length === 0 && (
-                    <>
-                    {Array.from({ length: 3 }).map((_, i) => (
-                        <tr key={`skeleton-${i}`} className="bg-white/60 animate-pulse">
-                        {/* Device */}
-                        <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                            <div className="inline-flex items-center justify-center rounded-xl bg-indigo-50 p-2 shrink-0">
-                                <Bluetooth className="h-4 w-4 text-[#6B77F7]" />
-                            </div>
-                            <div className="space-y-2 w-full">
-                                <div className="h-3 w-3/4 rounded bg-zinc-200" />
-                                <div className="h-2 w-1/2 rounded bg-zinc-100" />
-                            </div>
-                            </div>
-                        </td>
-
-                        {/* RSSI */}
-                        <td className="px-4 py-3">
-                            <div className="h-3 w-10 rounded bg-zinc-200 mx-auto" />
-                        </td>
-
-                        {/* Nickname */}
-                        <td className="px-4 py-3">
-                            <div className="h-3 w-3/5 rounded bg-zinc-200 mx-auto" />
-                        </td>
-
-                        {/* Edit nickname */}
-                        <td className="px-4 py-3">
-                            <div className="h-6 w-6 rounded-full bg-zinc-200 mx-auto" />
-                        </td>
-
-                        {/* Connect/Disconnect */}
-                        <td className="px-4 py-3">
-                            <div className="ml-auto h-8 w-24 rounded-lg bg-zinc-200" />
-                        </td>
-                        </tr>
-                    ))}
-                    </>
-                )}
-
-              {!scanning && (!bleDevices || bleDevices.length === 0) && (
-                <tr>
-                  <td className="px-4 py-6 text-center text-zinc-500" colSpan={5}>
-                    {selectedFamilyId
-                      ? "No devices found for this project family. Try scanning."
-                      : "Select a project family and scan for devices."}
-                  </td>
-                </tr>
-              )}
-
               {bleDevices.map((d) => {
-                const displayName = d.nickname || d.rawName || "BLE Device";
+                // 🔒 Device column should always show the *raw* device name, not the nickname:
+                const deviceLabel = d.rawName || "BLE Device";
+                const nickname = d.nickname || "";
+
                 return (
                   <tr key={d.mac} className="bg-white/60 hover:bg-white">
-                    {/* Device column */}
+                    {/* Device column (raw name only) */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 overflow-hidden">
                         <div className="inline-flex items-center justify-center rounded-xl bg-indigo-50 p-2 shrink-0">
                           <Bluetooth className="h-4 w-4 text-[#6B77F7]" />
                         </div>
                         <div className="min-w-0">
-                          <div className="font-medium truncate">{displayName}</div>
+                          <div className="font-medium truncate">{deviceLabel}</div>
                           <div className="text-xs text-zinc-500 truncate">{d.mac}</div>
                         </div>
                       </div>
@@ -252,67 +203,48 @@ export default function BleScanner() {
                       {typeof d.rssi === "number" ? `${d.rssi} dBm` : "—"}
                     </td>
 
-                    {/* Nickname: widest column, truncates nicely */}
+                    {/* Nickname — pill only here */}
                     <td className="px-4 py-3">
-                      {d.nickname ? (
+                      {nickname ? (
                         <span
                           className="inline-flex max-w-full items-center rounded-full text-xs font-medium truncate"
                           style={{
                             padding: "0.12rem 0.45rem",
-                            background: tagPalette(d.nickname).bg,
-                            border: `1px solid ${tagPalette(d.nickname).border}`,
-                            color: tagPalette(d.nickname).text,
+                            background: tagPalette(nickname).bg,
+                            border: `1px solid ${tagPalette(nickname).border}`,
+                            color: tagPalette(nickname).text,
                             lineHeight: 1.15,
                           }}
-                          title={d.nickname}
+                          title={nickname}
                         >
-                          {d.nickname}
+                          {nickname}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-400">—</span>
                       )}
                     </td>
 
-                    {/* Change Nickname: just the + button */}
+                    {/* Change Nickname */}
                     <td className="px-4 py-3">
                       <button
-                        className="inline-flex items-center justify-center p-2 rounded-lg hover:bg-zinc-100 transition-colors"
-                        title={`Set nickname for ${displayName}`}
-                        onClick={() => handleOpenAssign(d.mac, d.nickname ?? undefined)}
+                        className="tsq-icon-btn"
+                        title={`Set nickname for ${deviceLabel}`}
+                        onClick={() => handleOpenAssign(d.mac, nickname || undefined)}
                         disabled={!selectedFamilyId}
                       >
                         <Edit3 className="h-4 w-4 text-zinc-600" />
                       </button>
                     </td>
 
-                    {/* Action: Connect / Disconnect */}
-                    <td className="px-4 py-3">
-                      <div className="flex justify-start">
-                        <button
-                          className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white disabled:opacity-60 ${
-                            d.connected ? "bg-rose-500 hover:opacity-95" : "bg-[#6B77F7] hover:opacity-95"
-                          }`}
-                          onClick={() => handleToggleConnect(d)}
-                          disabled={!!d.connecting}
-                        >
-                          {d.connecting ? (
-                            <>
-                              <RefreshCcw className="h-4 w-4 animate-spin" />
-                              {d.connected ? "Disconnecting…" : "Connecting…"}
-                            </>
-                          ) : d.connected ? (
-                            <>
-                              {/* <Plug className="h-4 w-4" /> */}
-                              Disconnect
-                            </>
-                          ) : (
-                            <>
-                              {/* <PlugZap className="h-4 w-4" /> */}
-                              Connect
-                            </>
-                          )}
-                        </button>
-                      </div>
+                    {/* Action */}
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        className={`tsq-btn ${d.connected ? "ghost" : "primary"}`}
+                        onClick={() => handleToggleConnect(d)}
+                        disabled={!!d.connecting}
+                      >
+                        {d.connecting ? "Working…" : d.connected ? "Disconnect" : "Connect"}
+                      </button>
                     </td>
                   </tr>
                 );
@@ -321,15 +253,8 @@ export default function BleScanner() {
           </table>
         </div>
 
-        {/* Footer hint */}
-        <div className="flex items-center justify-between mt-4 px-4 pb-4 text-sm">
-          <div className="text-rose-600 inline-flex items-center gap-2">
-            <span className="text-lg">●</span> Disconnected
-          </div>
-          <div className="text-xs text-zinc-500">
-            Assign a nickname to identify the device quickly.
-          </div>
-        </div>
+        {/* Footer hint (unchanged) */}
+        
       </div>
 
       {/* Nickname Modal */}
@@ -340,7 +265,7 @@ export default function BleScanner() {
             <div className="w-full max-w-md rounded-2xl bg-white shadow-xl border">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <div className="font-medium">Assign Device & Nickname</div>
-                <button className="p-1 rounded-lg hover:bg-zinc-100" onClick={closeNicknameModal}>
+                <button className="tsq-icon-btn" onClick={closeNicknameModal} title="Close">
                   <X className="h-5 w-5 text-zinc-600" />
                 </button>
               </div>
@@ -353,9 +278,9 @@ export default function BleScanner() {
                   </span>
                 </div>
                 <div>
-                  <label className="text-xs text-zinc-500">Nickname</label>
+                  <label className="tsq-field-label">Nickname</label>
                   <input
-                    className="w-full mt-1 rounded-xl border px-3 py-2 bg-white"
+                    className="tsq-input"
                     placeholder="e.g., Gateway-Lab, Beacon-North, Unit-A"
                     value={nicknameDraft}
                     onChange={(e) => setNicknameDraft(e.target.value)}
@@ -368,11 +293,11 @@ export default function BleScanner() {
               </div>
 
               <div className="px-4 py-3 border-t flex items-center justify-end gap-2">
-                <button className="px-3 py-2 rounded-xl border bg-white hover:bg-zinc-50" onClick={closeNicknameModal}>
+                <button className="tsq-btn ghost" onClick={closeNicknameModal}>
                   Cancel
                 </button>
                 <button
-                  className="px-3 py-2 rounded-xl text-white bg-[#6B77F7] hover:opacity-95 disabled:opacity-50"
+                  className="tsq-btn primary"
                   disabled={!selectedFamilyId || !nicknameModalMac}
                   onClick={handleAssignSave}
                 >

@@ -220,17 +220,11 @@
 }
 .tsq-btn {
   background: #b1bdd8;
-  border: 1px solid rgba(255, 255, 255, 0.08);
   color: #000000;
   padding: 6px 10px;
   border-radius: 10px;
   cursor: pointer;
   font-size: 13px;
-}
-
-.tsq-btn.ghost {
-  background: #fff;
-  color: #000000;
 }
 
 .tsq-mac-warn {

@@ -158,7 +158,7 @@ export const useAppStore = create<AppState>()(
     analyzer: {
       ip: "172.16.10.1",
       port: "5555",
-      model: "Keysight / R&S",
+      model: "",
       connected: false,
     },
 
