@@ -64,6 +64,14 @@ function parseFirstInt(text?: string | number): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// NEW: Format Hz → "xxxMHz" with trailing zeros trimmed (e.g., 918.5MHz, 1880MHz)
+function formatMHzLabel(hz: number): string {
+  if (!hz || !Number.isFinite(hz)) return "";
+  const mhz = hz / 1_000_000;
+  const s = mhz.toFixed(3).replace(/\.?0+$/, ""); // up to 3dp, trim trailing zeros
+  return `${s}MHz`;
+}
+
 const isFreqAccuracy = (t: TestItem) => /frequency\s*accuracy/i.test(t.type);
 
 // -------------------------------------------------------
@@ -351,7 +359,28 @@ export default function TestSequence() {
               ) : (
                 sequences[tab].map((t) => {
                   const isFA = /frequency\s*accuracy/i.test(t.type);
-                  const tabPpmDefault = tab === "BLE" ? 40 : 20;
+
+                  // --- Header frequency label (fallback per protocol) ---
+                  const hzFromInput = parseFirstFreqHz(t.frequencyText);
+                  const hzDefault =
+                    tab === "LTE" ? 1_880_000_000 :
+                    tab === "LoRa" ? 918_500_000 :
+                    2_402_000_000; // BLE
+                  const headerHz = hzFromInput || hzDefault;
+                  const headerFreqLabel = formatMHzLabel(headerHz); // e.g., "2402MHz"
+
+                  // --- Header power label: only for LoRa/LTE AND only for Tx Power (not Frequency Accuracy) ---
+                  let headerPowerLabel: string | null = null;
+                  if (!isFA && (tab === "LoRa" || tab === "LTE")) {
+                    const parsed = parseFirstInt(t.powerText);
+                    const powerDbm =
+                      Number.isFinite(parsed) && parsed !== 0
+                        ? parsed
+                        : tab === "LTE"
+                        ? 23
+                        : 14;
+                    headerPowerLabel = `${powerDbm}dBm`;
+                  }
 
                   return (
                     <div
@@ -378,7 +407,14 @@ export default function TestSequence() {
                             title={t.minimized ? "Expand" : "Minimize"}
                           >
                             <span className="tsq-title-text">
-                              {t.type} <span className="tsq-test-proto">&nbsp;· {tab}</span>
+                              {t.type}
+                              <span className="tsq-test-proto">&nbsp;· {tab}</span>
+                              {/* frequency in the header, same style as protocol */}
+                              <span className="tsq-test-proto">&nbsp;{headerFreqLabel}</span>
+                              {/* power in header for LoRa/LTE Tx Power only */}
+                              {headerPowerLabel && (
+                                <span className="tsq-test-proto">&nbsp;{headerPowerLabel}</span>
+                              )}
                             </span>
                             <ChevronDown
                               size={16}
