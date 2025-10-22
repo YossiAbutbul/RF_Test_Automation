@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes.tests_routes import router as tests_router
 from api.routes.analyzer_routes import router as analyzer_router
 from api.routes.tests_ble_routes import router as ble_tests_router
+from backend.api.routes import ble
+
 
 
 app = FastAPI(title="RF Automation API")
@@ -29,6 +31,8 @@ app.add_middleware(
 app.include_router(analyzer_router)
 app.include_router(tests_router)
 app.include_router(ble_tests_router)
+app.include_router(ble.router)
+
 
 
 @app.get("/health")

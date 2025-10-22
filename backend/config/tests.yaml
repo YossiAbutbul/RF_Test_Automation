@@ -5,7 +5,7 @@ defaults:
     default_delay_s: 0.15
 
 # Global analyzer reference offset (read by tests_common.get_global_analyzer_ref_offset_db)
-analyzer_analyzer_ref_offset_db: 20.5  # copied from root analyzer_ref_offset_db
+analyzer_analyzer_ref_offset_db: 25.5  # copied from root analyzer_ref_offset_db
 
 
 # ---------- All test configs live under this key (used by get_test_config) ----------

@@ -1,0 +1,280 @@
+/* ------------------------------
+   CONFIGURATIONS PAGE LAYOUT
+   ------------------------------ */
+
+:root {
+  /* control sizing to match .tsq-btn */
+  --control-height: 36px;
+  --control-radius: 12px;
+  --control-pad-x: 12px;
+  --control-pad-y: 0; /* vertical handled by line-height */
+
+  /* ---- Surface & Background ---- */
+  --background: #f7f8fa;
+  --card-bg: #fdfdfd;
+  --table-head-bg: #fafafa;
+
+  /* ---- Text ---- */
+  --text-dark: #000000;
+  --text-light: #ffffff;
+
+  /* ---- Dividers / Shadows ---- */
+  --divider: rgba(0, 0, 0, 0.05);
+  --box-shadow-dark: rgba(0, 0, 0, 0.05);
+
+  /* ---- Brand / Accent Colors ---- */
+  --tsq-btn-primary: #6b77f7;
+
+  /* ---- Buttons / Controls ---- */
+  --tsq-btn-border-color: #e5e7eb;
+  --tsq-btn-bg: #ffffff;
+  --tsq-btn-fg: #111;
+  --tsq-btn-ghost: #ffffff;
+
+  /* ---- Icon Buttons ---- */
+  --icon-btn-bg: #ffffff;
+  --tsq-icon-btn-hover-bg: #f3f4f6;
+  --tsq-icon-btn-danger: #b91c1c;
+
+  /* ---- Scrollbars ---- */
+  --scrol-bar-color: rgb(114 115 123 / 50%);
+  --scrollbar-thumb: rgba(107, 119, 247, 0.4);
+  --scrollbar-thumb-hover: rgba(107, 119, 247, 0.7);
+
+  /* ---- Tables ---- */
+  --row-hover-bg: rgba(107, 119, 247, 0.03);
+
+  --select-arrow: #999;
+}
+
+.configurations-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--background);
+}
+
+/* Card styling for DUT Connection section */
+.dut-connection-card {
+  height: calc(100vh - 220px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border-radius: 1rem;
+  box-shadow: 0 0 8px var(--box-shadow-dark);
+  overflow: hidden;
+  transition: background 0.3s ease;
+}
+
+/* The top controls (scan, dropdowns) stay fixed above the scrollable table */
+.dut-connection-card .controls {
+  flex-shrink: 0;
+  padding: 1rem;
+  border-bottom: 1px solid var(--divider);
+  background: inherit;
+  z-index: 2;
+}
+
+/* Table wrapper becomes scrollable */
+.dut-connection-card .table-scroll {
+  flex-grow: 1;
+  overflow-y: auto;
+
+  /* Stable scrollbar width to prevent layout shift */
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrol-bar-color) transparent;
+}
+
+/* WebKit scrollbar for stable width look */
+.dut-connection-card .table-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.dut-connection-card .table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dut-connection-card .table-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.dut-connection-card .table-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* (If you use .table-scroll elsewhere) */
+.table-scroll {
+  scrollbar-gutter: stable both-edges;
+}
+.table-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* Table layout tweaks for a clean look */
+.dut-connection-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.dut-connection-card th,
+.dut-connection-card td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+/* Keep header sticky at top during scroll */
+.dut-connection-card thead th {
+  position: sticky;
+  top: 0;
+  background-color: var(--table-head-bg);
+  z-index: 5;
+  border-bottom: 1px solid var(--divider);
+}
+
+/* Smooth color transitions for hover effects */
+.dut-connection-card tbody tr {
+  transition: background 0.15s ease;
+}
+.dut-connection-card tbody tr:hover {
+  background: var(--row-hover-bg);
+}
+
+/* Optional: limit modal scroll inside page if open */
+.nickname-modal-open .dut-connection-card {
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+/* ------------------------------
+   BUTTONS (match Test Sequence)
+   ------------------------------ */
+.tsq-btn {
+  /* border: 1px solid var(--tsq-btn-border-color); */
+  border-radius: var(--control-radius);
+  padding: 8px var(--control-pad-x);
+  font-size: 13px;
+  background: var(--tsq-btn-bg);
+  color: var(--tsq-btn-fg);
+  transition: transform 0.06s ease;
+  line-height: calc(var(--control-height) - 16px); /* keep optical height */
+  height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.tsq-btn:hover {
+  transform: translateY(-1px);
+}
+.tsq-btn.primary {
+  background: var(--tsq-btn-primary);
+  color: var(--text-light);
+  /* border-color: var(--tsq-btn-primary); */
+}
+.tsq-btn.ghost {
+  background: #fff;
+  color: var(--text-dark);
+}
+
+/* ------------------------------
+   TABLE ICON BUTTONS (match Test Sequence)
+   ------------------------------ */
+.tsq-icon-btn {
+  border-radius: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease, box-shadow 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+.tsq-icon-btn:hover {
+  background: var(--tsq-icon-btn-hover-bg);
+  transform: translateY(-1px);
+}
+.tsq-icon-btn.danger {
+  color: var(--tsq-icon-btn-danger);
+}
+.tsq-icon-btn.primary {
+  color: var(--tsq-btn-primary);
+}
+.tsq-icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ------------------------------
+   FORM CONTROLS (CSS instead of Tailwind)
+   ------------------------------ */
+
+.tsq-field-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* shared base for input & select to match button height */
+.tsq-input,
+.tsq-select {
+  width: 100%;
+  margin-top: 4px;
+  height: var(--control-height);
+  border-radius: var(--control-radius);
+  border: 1px solid var(--tsq-btn-border-color);
+  background: #fff;
+  padding: 0 var(--control-pad-x);
+  font-size: 13px;
+  line-height: calc(var(--control-height) - 2px);
+  color: var(--text-dark);
+  outline: none;
+}
+
+/* custom select arrow and consistent spacing */
+.tsq-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+
+  /* two little triangles forming a ▾ */
+  background-image: linear-gradient(
+      -135deg,
+      var(--select-arrow, #999) 50%,
+      transparent 50%
+    ),
+    linear-gradient(135deg, var(--select-arrow, #999) 50%, transparent 50%);
+  background-repeat: no-repeat;
+
+  /* Safari-friendly positioning (right + center) */
+  background-position: right 16px center, /* first triangle */ right 10px center; /* second triangle */
+
+  background-size: 6px 6px, 6px 6px;
+
+  /* space for the arrow */
+  padding-right: 36px;
+
+  /* your existing control styles (keep these as you had) */
+  height: var(--control-height, 36px);
+  border-radius: var(--control-radius, 12px);
+  background-color: #fff; /* or var(--card-bg) */
+  padding-left: var(--control-pad-x, 12px);
+  font-size: 13px;
+  line-height: calc(var(--control-height, 36px) - 2px);
+  color: var(--text-dark, #111);
+  outline: none;
+}
+
+.tsq-input:focus,
+.tsq-select:focus {
+  border: 1px solid var(--tsq-btn-border-color);
+}

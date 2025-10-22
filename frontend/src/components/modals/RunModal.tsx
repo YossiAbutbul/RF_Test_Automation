@@ -38,7 +38,7 @@ export default function RunModal(props: Props) {
         open={props.open}
         onClose={props.onClose}
         mode={props.mode ?? "txPower"}
-        defaultMac={props.defaultMac ?? "80E1271FD8DD"}
+        defaultMac={props.defaultMac ?? "80E1271FD8B8"}
         defaultFreqHz={props.defaultFreqHz ?? 2_402_000_000}
         defaultPowerParamHex={props.bleDefaultPowerParamHex ?? "31"}
         minValue={props.minValue ?? null}

@@ -47,15 +47,6 @@ def _fmt_commas(x: float, decimals: int = 2) -> str:
     """Format with thousands separators and chosen decimals."""
     return f"{float(x):,.{decimals}f}"
 
-def _zoom_unit_str(span_hz: int, rbw_hz: int, vbw_hz: int) -> str:
-    """
-    Format zoom values as:
-      span=2.0MHz rbw=300.0KHz vbw=100.0KHz
-    """
-    def mhz(v: float) -> str: return f"{v/1e6:.1f}MHz"
-    def khz(v: float) -> str: return f"{v/1e3:.1f}KHz"
-    return f"span={mhz(span_hz)} rbw={khz(rbw_hz)} vbw={khz(vbw_hz)}"
-
 def _load_ble_zooms_from_yaml(delay_default: float) -> List[Dict[str, Any]]:
     """
     Read zoom passes from backend/config/tests.yaml → tests.ble_frequency_accuracy.zooms
@@ -138,23 +129,20 @@ async def run_ble_tx_power_stream(
         spec = await ensure_analyzer_async()
         yield step("connectAnalyzer", "done")
 
+        # ---- Aligned to LoRa format ----
         yield step("configureAnalyzer", "start")
         eff = await apply_analyzer_setup(
             spec=spec, center_hz=int(freq_hz), setup=a_set,
             analyzer_ref_offset_db=get_global_analyzer_ref_offset_db()
         )
-        def mhz(x):
-            try: return float(x)/1e6
-            except Exception: return 0.0
         yield step(
             "configureAnalyzer",
             "done",
             message=(
-                f"Analyzer center={mhz(eff.get('center_hz')):.3f} MHz "
-                f"span={mhz(eff.get('span_hz')):.3f} MHz "
-                + (f"RBW={eff.get('rbw_hz')} Hz " if eff.get('rbw_hz') is not None else "")
-                + (f"VBW={eff.get('vbw_hz')} Hz"   if eff.get('vbw_hz') is not None else "")
-            ).strip(),
+                f"Analyzer cfg center={(eff['center_hz'])/1e6}MHz "
+                f"span={(eff.get('span_hz'))/1e6}MHz rbw={(eff.get('rbw_hz'))/1e3}KHz "
+                f"vbw={(eff.get('vbw_hz'))/1e3}KHz ref_off={eff.get('analyzer_ref_offset_db')}dB"
+            ),
         )
         await asyncio.sleep(after_center_s)
 
@@ -162,7 +150,7 @@ async def run_ble_tx_power_stream(
         dut = DUTBLE(mac); dut.connect()
         yield step("connectDut", "done")
 
-        yield step("cwOn", "start", message=f"Set BLE Power Parameter = {power_const}")
+        yield step("cwOn", "start", message=f"BLE tone on @ {(freq_hz)/1e6} MHz, param {power_const}")
         yield step("readBlePower", "start", message="Read current BLE TxPowerConst")
         current_power: Optional[int] = None
         try:
@@ -250,7 +238,9 @@ async def run_ble_tx_power_stream(
         tone_settle_s  = float(cfg.get("tone_settle_s", 0.25))
         measure_wait_s = float(cfg.get("measure_settle_s", 0.10))
         await asyncio.sleep(tone_settle_s)
-        yield step("measure", "start", message=f"peak_search('{get_marker_name()}') → get_marker_power('{get_marker_name()}')")
+
+        # ---- Aligned measure message to LoRa wording ----
+        yield step("measure", "start", message="Peak search + read marker power")
         await spec_call(spec.peak_search, get_marker_name())
         await asyncio.sleep(measure_wait_s)
         pow_str = await spec_call(spec.get_marker_power, get_marker_name())
@@ -308,7 +298,7 @@ async def run_ble_frequency_accuracy_stream(
 
     - Uses the same centering methods as tests_common.zoom_and_center
     - No explicit CW stop (tone ends by DUT timeout)
-    - Zoom logs like: "Zoom 1/3 → span=2.0MHz rbw=300.0KHz vbw=100.0KHz"
+    - Zoom logs like LoRa: "Zoom 1/3 → span=2MHz rbw=300KHz vbw=100KHz"
     """
     cfg = get_test_config("ble_frequency_accuracy") or {}
     marker = get_marker_name()
@@ -353,13 +343,14 @@ async def run_ble_frequency_accuracy_stream(
         yield step("connectAnalyzer", "done")
 
         yield step("configureAnalyzer", "start")
-        _ = await apply_analyzer_setup(
+        eff = await apply_analyzer_setup(
             spec=spec,
             center_hz=int(center_hz),
             setup=a_set,
             analyzer_ref_offset_db=get_global_analyzer_ref_offset_db(),
         )
-        yield step("configureAnalyzer", "done", message=f"Center={center_hz/1e6:.3f} MHz (pre-zoom)")
+        # ---- Aligned to LoRa frequency-accuracy wording ----
+        yield step("configureAnalyzer", "done", message=f"Analyzer cfg center={(eff['center_hz'])/1e6}MHz")
         await asyncio.sleep(after_center_s)
 
         # DUT connect
@@ -370,7 +361,7 @@ async def run_ble_frequency_accuracy_stream(
         # 1) CW ON
         yield step(
             "cwOn", "start",
-            message=f"BLE Tone ch={channel} ({center_hz/1e6:.3f} MHz), dur={tone_duration_ms} ms, offset={tone_offset_hz} Hz"
+            message=f"BLE Tone on @ {(center_hz)/1e6} MHz, {tone_duration_ms} ms, offset={tone_offset_hz} Hz"
         )
         _ = dut.ble_tone_start_best_effort(
             channel=int(channel),
@@ -397,7 +388,8 @@ async def run_ble_frequency_accuracy_stream(
         for i, z in enumerate(zooms, 1):
             span_hz = int(z["span_hz"]); rbw_hz = int(z["rbw_hz"]); vbw_hz = int(z["vbw_hz"])
             delay_s = float(z.get("delay_s", delay_default))
-            yield log(f"Zoom {i}/{total} \u2192 {_zoom_unit_str(span_hz, rbw_hz, vbw_hz)}")
+            # ---- Aligned zoom log text to LoRa ----
+            yield log(f"Zoom {i}/{total} \u2192 span={span_hz/1e6}MHz rbw={rbw_hz/1e3}KHz vbw={vbw_hz/1e3}KHz")
 
             # change zoom spectrum params + peak search + marker center (same method calls as LoRa)
             await zoom_and_center(
@@ -412,8 +404,8 @@ async def run_ble_frequency_accuracy_stream(
         # Short settle before final read
         await asyncio.sleep(measure_settle_s)
 
-        # Final frequency read (messages/logs formatted with commas)
-        yield step("measure", "start", message=f"get_marker_frequency('{marker}')")
+        # Final frequency read (aligned wording)
+        yield step("measure", "start", message="Read marker frequency + compute error/ppm")
         f_str = await spec_call(spec.get_marker_frequency, marker)
         measured_hz = float(num(f_str))
 

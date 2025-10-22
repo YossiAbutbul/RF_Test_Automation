@@ -36,6 +36,9 @@ const ORDER: StepKey[] = [
 const initSteps = (): Record<StepKey, StepStatus> =>
   ORDER.reduce((a, k) => ((a[k] = k === "connectAnalyzer" ? "doing" : "idle"), a), {} as Record<StepKey, StepStatus>);
 
+// --- helper: thousands separators for integers ---
+const fmtIntWithCommas = (n: number) => Math.round(n).toLocaleString("en-US");
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -59,7 +62,7 @@ export default function LoRaRunModal({
   testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
   defaultFreqHz = 918_500_000,
   defaultPowerDbm = 14,
-  defaultMac = "80E1271FD8DD",
+  defaultMac = "80E1271FD8B8",
   minValue = null,
   maxValue = null,
   defaultPpmLimit = 20,
@@ -237,10 +240,18 @@ export default function LoRaRunModal({
         <div className="tsq-result">
           {mode === "freqAccuracy" ? (
             <>
-              {resFa?.measuredHz != null && <span>Measured:<b> {resFa.measuredHz.toLocaleString()} Hz</b> </span>}
-              {resFa?.errorHz != null && <span className="tsq-chip">{resFa.errorHz} Hz error</span>}
-              {resFa?.errorPpm != null && <span className="tsq-chip">{resFa.errorPpm.toFixed(3)} ppm</span>}
-              {resFa?.pass != null && <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>{resFa.pass ? "PASS" : "FAIL"}</span>}
+              {resFa?.measuredHz != null && (
+                <span>Measured: <b>{fmtIntWithCommas(resFa.measuredHz)} Hz</b></span>
+              )}
+              {resFa?.errorHz != null && (
+                <span>&nbsp; Δf: <b>{fmtIntWithCommas(resFa.errorHz)} Hz</b></span>
+              )}
+              {resFa?.errorPpm != null && (
+                <span>&nbsp; Error: <b>{resFa.errorPpm.toFixed(2)} ppm</b></span>
+              )}
+              {resFa?.pass != null && (
+                <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>{resFa.pass ? "PASS" : "FAIL"}</span>
+              )}
             </>
           ) : (
             <>

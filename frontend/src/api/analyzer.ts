@@ -1,18 +1,8 @@
 // frontend/src/api/analyzer.ts
+
 const RAW_BASE =
   (import.meta as any)?.env?.VITE_API_BASE?.trim() || "http://127.0.0.1:8000";
 const API_BASE = RAW_BASE.replace(/0\.0\.0\.0/i, "127.0.0.1").replace(/\/$/, "");
-
-type ConnectParams = { ip: string; port?: number };
-
-export type SweepConfig = {
-  centerHz?: number;
-  spanHz?: number;
-  rbwHz?: number;
-  vbwHz?: number;
-  refDbm?: number;
-};
-
 
 function url(path: string) {
   return `${API_BASE}${path}`;
@@ -64,9 +54,12 @@ async function httpPost(path: string, body?: unknown, timeoutMs = 3000) {
 }
 
 // ----- Connectivity -----
+// use a real analyzer endpoint to avoid 404s on "/"
 export async function ping(): Promise<boolean> {
   try {
-    const r = await httpGet("/", 1500);
+    // snapshot exists in your backend (GET /analyzer/snapshot). If analyzer
+    // isn't connected yet, backend should still respond (or 204 which we catch).
+    const r = await httpGet("/analyzer/snapshot", 2000);
     return r.ok;
   } catch {
     return false;
@@ -74,7 +67,7 @@ export async function ping(): Promise<boolean> {
 }
 
 // ----- Analyzer control -----
-export async function connectAnalyzer({ ip, port }: ConnectParams) {
+export async function connectAnalyzer(ip: string, port: number) {
   console.log("POST", url("/analyzer/connect"), { ip, port });
   const r = await httpPost("/analyzer/connect", { ip, port }, 4000);
   const j = await r.json();
@@ -83,39 +76,36 @@ export async function connectAnalyzer({ ip, port }: ConnectParams) {
 }
 
 export async function disconnectAnalyzer() {
-  const r = await httpPost("/analyzer/disconnect", undefined, 2000);
-  return r.json();
+  await httpPost("/analyzer/disconnect", {}, 2000);
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// analyzer.ts
-export async function configureSweep(p: {
+// Sweep configuration (fan-out shape matches your backend routes)
+type SweepParams = {
   centerHz?: number;
   spanHz?: number;
   rbwHz?: number;
   vbwHz?: number;
   refDbm?: number;
-  traceMode?: string;   // also covers your Max Hold call
-}) {
-  if (p.centerHz !== undefined)
-    await httpPost("/analyzer/set-center-frequency", { value: p.centerHz, units: "HZ" }, 2500);
-  if (p.spanHz !== undefined)
-    await sleep(20), await httpPost("/analyzer/set-span", { value: p.spanHz, units: "HZ" }, 2500);
-  if (p.rbwHz !== undefined)
-    await sleep(20), await httpPost("/analyzer/set-rbw", { value: p.rbwHz, units: "HZ" }, 2500);
-  if (p.vbwHz !== undefined)
-    await sleep(20), await httpPost("/analyzer/set-vbw", { value: p.vbwHz, units: "HZ" }, 2500);
-  if (p.refDbm !== undefined)
-    await sleep(20), await httpPost("/analyzer/set-ref-level", { dbm: p.refDbm }, 2500);
+  usePeakDetector?: boolean;
+};
 
-  // future extension
-  if (p.traceMode === "MAX_HOLD") {
-    // add route later, or just ignore for now
-    console.log("TODO: handle traceMode");
-  }
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
+export async function configureSweep(p: SweepParams) {
+  if (p.centerHz != null) await httpPost("/analyzer/set-center-frequency", { value: p.centerHz, units: "HZ" }, 2500);
+  await sleep(20);
+  if (p.spanHz != null) await httpPost("/analyzer/set-span", { value: p.spanHz, units: "HZ" }, 2500);
+  await sleep(20);
+  if (p.rbwHz != null) await httpPost("/analyzer/set-rbw", { value: p.rbwHz, units: "HZ" }, 2500);
+  await sleep(20);
+  if (p.vbwHz != null) await httpPost("/analyzer/set-vbw", { value: p.vbwHz, units: "HZ" }, 2500);
+  await sleep(20);
+  if (p.refDbm != null) await httpPost("/analyzer/set-ref-level", { dbm: p.refDbm }, 2500);
+  await sleep(10);
+  if (p.usePeakDetector) await httpPost("/analyzer/enable-peak-detector", {}, 2000);
+}
 
 // Polling wants to be snappy
 export async function getRawDataCsv(): Promise<string> {
@@ -125,16 +115,17 @@ export async function getRawDataCsv(): Promise<string> {
   return text;
 }
 
-// ----- NEW: snapshot hydrates everything in one call -----
+// ----- snapshot (backend provides it) -----
 export type AnalyzerSnapshot = {
   centerHz?: number;
   spanHz?: number;
   rbwHz?: number;
   vbwHz?: number;
   refDbm?: number;
+  identity?: string; // tolerate if backend adds this later
 };
 
 export async function getSnapshot(): Promise<AnalyzerSnapshot> {
-  const r = await httpGet("/analyzer/snapshot", 6000); // give hydration one request + 6s
+  const r = await httpGet("/analyzer/snapshot", 6000);
   return r.json();
 }

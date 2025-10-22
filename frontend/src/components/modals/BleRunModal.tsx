@@ -35,7 +35,7 @@ const LABEL: Record<StepKey, string> = {
   measure: "Measure from spectrum",
   close: "Close sessions",
   // tx-power only
-  cwOn: "Set BLE Power / Start Tone",
+  cwOn: "Start Tone",
   saveReset: "Save & Reset DUT",
   reconnectDut: "Reconnect to DUT",
   toneStart: "Start BLE Test Tone",
@@ -77,6 +77,11 @@ function deriveBleChannel(freqHz: number | undefined | null): number {
   return Math.max(0, Math.min(39, ch));
 }
 
+// --- NEW: integer formatter with thousands separators for display ---
+function fmtIntWithCommas(n: number): string {
+  return Math.round(n).toLocaleString("en-US");
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -102,7 +107,7 @@ export default function BleRunModal({
   onClose,
   mode = "txPower",
 
-  defaultMac = "80E1271FD8DD",
+  defaultMac = "80E1271FD8B8",
   defaultFreqHz = 2_402_000_000,
 
   defaultPowerParamHex = "31",
@@ -532,7 +537,7 @@ export default function BleRunModal({
           <div className="tsq-result">
             {measuredHz != null && (
               <span>
-                Measured: <b>{measuredHz.toFixed(0)} Hz</b>
+                Measured: <b>{fmtIntWithCommas(measuredHz)} Hz</b>
               </span>
             )}
             {errorHz != null && (
