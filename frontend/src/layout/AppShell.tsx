@@ -46,13 +46,13 @@ export default function AppShell() {
           >
             {open ? (
               <div className="flex items-baseline">
-                <span className="text-xl font-semibold text-[#5964DA]">
+                <span className="font-bold text-[#5964DA]" style={{ marginLeft: 8, fontSize:22}}>
                   RF Automation
                 </span>
                
               </div>
             ) : (
-              <span className="text-xl font-bold text-[#5964DA]">RF</span>
+              <span className="font-bold text-[#5964DA]" style={{ marginLeft: 8 , fontSize:22}}>RF</span>
             )}
           </div>
           {/* Nav container without card */}

@@ -551,6 +551,7 @@ export default function TestSequence() {
                               value={t.name}
                               onChange={(e) => updateTest(t.id, { name: e.target.value })}
                               placeholder="e.g., Tx Power"
+                              disabled
                             />
                           </div>
 
