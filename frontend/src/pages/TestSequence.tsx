@@ -78,7 +78,7 @@ function formatMHzLabel(hz: number): string {
 const isFreqAccuracy = (t: TestItem) => /frequency\s*accuracy/i.test(t.type);
 
 // -------------------------------------------------------
-const TEST_LIBRARY = ["Tx Power", "Frequency Accuracy"];
+const TEST_LIBRARY = ["Tx Power", "Frequency Accuracy", "OBW"];
 
 export default function TestSequence() {
   // state
@@ -179,6 +179,23 @@ export default function TestSequence() {
     const t = sequences[tab].find((x) => x.id === id);
     if (!t) return;
     updateTest(id, { minimized: !t.minimized });
+  };
+
+  // CLEAR helpers
+  const clearCurrentProtocol = () => {
+    if (!sequences[tab].length) return;
+    const ok = window.confirm(`Clear all ${tab} tests from the builder?`);
+    if (!ok) return;
+    setSequences((prev) => ({ ...prev, [tab]: [] }));
+  };
+
+  const clearAllProtocols = () => {
+    const total =
+      sequences.LoRa.length + sequences.LTE.length + sequences.BLE.length;
+    if (!total) return;
+    const ok = window.confirm("Clear ALL tests from LoRa, LTE, and BLE builders?");
+    if (!ok) return;
+    setSequences({ LoRa: [], LTE: [], BLE: [] });
   };
 
   // Card DnD
@@ -420,15 +437,37 @@ export default function TestSequence() {
                 </div>
               </div>
 
+              {/* Header Actions */}
               <div className="tsq-actions">
-                <button className="tsq-btn ghost" onClick={handleClickLoad} title="Load test plan (all protocols)">
-                  <FolderDown size={16} />
-                  <span>Load Plan</span>
+
+                {/* Delete current tab */}
+                <button
+                  className="tsq-icon-btn danger"
+                  onClick={clearCurrentProtocol}
+                  title={`Clear all tests in ${tab}`}
+                >
+                  <Trash2 size={18} />
                 </button>
-                <button className="tsq-btn primary" onClick={handleClickSave} title="Save test plan (all protocols)">
-                  <Save size={16} />
-                  <span>Save Plan</span>
+                
+                {/* Load */}
+                <button
+                  className="tsq-icon-btn ghost"
+                  onClick={handleClickLoad}
+                  title="Load test plan"
+                >
+                  <FolderDown size={18} />
                 </button>
+
+                {/* Save */}
+                <button
+                  className="tsq-icon-btn primary"
+                  onClick={handleClickSave}
+                  title="Save test plan"
+                >
+                  <Save size={18} />
+                </button>
+
+                
 
                 {/* Hidden file input for JSON */}
                 <input

@@ -376,12 +376,15 @@ Root Colors
 
 .tsq-icon-btn {
   /* background: var(--background, #fff); */
-  border-radius: 10px;
-  padding: 6px 10px;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.08s ease, background 0.15s ease, box-shadow 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.15s ease;
 }
 .tsq-icon-btn:hover {
   background: var(--tsq-icon-btn-hover-bg);
