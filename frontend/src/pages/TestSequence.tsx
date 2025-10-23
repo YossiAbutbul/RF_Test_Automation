@@ -1,12 +1,17 @@
 import React from "react";
-import { ChevronDown, GripVertical, Trash2, PlayCircle } from "lucide-react";
+import { ChevronDown, GripVertical, Trash2, PlayCircle, FolderDown, Save } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import "./css/TestSequence.css";
 import RunModal from "../components/modals/RunModal";
+import {
+  exportTestPlanToFile,
+  importTestPlanFromFile,
+  type PersistedSeq as FilePersistedSeq,
+} from "@/utils/sequenceIO";
 
 // -------------------------------
-// Types (match your existing usage)
+// Types
 // -------------------------------
 export type Protocol = "LoRa" | "LTE" | "BLE";
 
@@ -26,7 +31,7 @@ export type TestItem = {
 };
 
 // -------------------------------
-// Persistence helpers (tiny + safe)
+// Persistence helpers
 // -------------------------------
 const SEQ_STORAGE_KEY = "rf-automation:test-sequence:v1";
 
@@ -43,7 +48,7 @@ function findNextIdFromSequences(seqs: Record<Protocol, TestItem[]>): number {
 }
 
 // -------------------------------
-// Small helpers for Run defaults
+// Helpers
 // -------------------------------
 const NUM_RE = /[-+]?\d*\.?\d+(?:e[-+]?\d+)?/i;
 
@@ -53,7 +58,6 @@ function parseFirstFreqHz(text?: string | number): number {
   const m = s.match(NUM_RE);
   if (!m) return 0;
   const val = parseFloat(m[0]);
-  // Treat < 1e6 as MHz; otherwise assume already Hz
   return Number.isFinite(val) ? (val < 1e6 ? Math.round(val * 1_000_000) : Math.round(val)) : 0;
 }
 
@@ -64,18 +68,15 @@ function parseFirstInt(text?: string | number): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-// NEW: Format Hz → "xxxMHz" with trailing zeros trimmed (e.g., 918.5MHz, 1880MHz)
 function formatMHzLabel(hz: number): string {
   if (!hz || !Number.isFinite(hz)) return "";
   const mhz = hz / 1_000_000;
-  const s = mhz.toFixed(3).replace(/\.?0+$/, ""); // up to 3dp, trim trailing zeros
+  const s = mhz.toFixed(3).replace(/\.?0+$/, "");
   return `${s}MHz`;
 }
 
 const isFreqAccuracy = (t: TestItem) => /frequency\s*accuracy/i.test(t.type);
 
-// -------------------------------------------------------
-// Component (logic/structure preserved; visuals unified)
 // -------------------------------------------------------
 const TEST_LIBRARY = ["Tx Power", "Frequency Accuracy"];
 
@@ -89,9 +90,8 @@ export default function TestSequence() {
   });
   const nextId = React.useRef(1);
 
-  // ------- Hydration & Persist -------
+  // Hydrate
   const hydratedRef = React.useRef(false);
-
   React.useEffect(() => {
     if (hydratedRef.current) return;
     try {
@@ -106,38 +106,35 @@ export default function TestSequence() {
             : findNextIdFromSequences(parsed.sequences);
         }
       }
-    } catch {
-      // ignore malformed cache
-    } finally {
-      hydratedRef.current = true;
-    }
+    } catch {}
+    hydratedRef.current = true;
   }, []);
 
-  React.useEffect(() => {
-    if (!hydratedRef.current) return;
+  const persistToLocal = (state: { tab: Protocol; sequences: Record<Protocol, TestItem[]>; nextId: number }) => {
     const payload: PersistedSeq = {
-      tab,
-      sequences,
-      nextId: nextId.current,
+      tab: state.tab,
+      sequences: state.sequences,
+      nextId: state.nextId,
     };
     try {
       localStorage.setItem(SEQ_STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // storage may be full/blocked; ignore
-    }
-  }, [tab, sequences]);
-  // ------- /Hydration & Persist -------
+    } catch {}
+  };
 
-  // DnD UI state
+  React.useEffect(() => {
+    if (!hydratedRef.current) return;
+    persistToLocal({ tab, sequences, nextId: nextId.current });
+  }, [tab, sequences]);
+
+  // DnD: cards + library
   const [draggingCardId, setDraggingCardId] = React.useState<number | null>(null);
   const [dragOverCardId, setDragOverCardId] = React.useState<number | null>(null);
   const [dragOverEdge, setDragOverEdge] = React.useState<"above" | "below" | null>(null);
   const [draggingLibTest, setDraggingLibTest] = React.useState<string | null>(null);
 
-  const totalAllTests =
-    sequences.LoRa.length + sequences.LTE.length + sequences.BLE.length;
+  // NEW: file drag overlay
+  const [fileDragActive, setFileDragActive] = React.useState(false);
 
-  // helpers
   const makeTest = (name: string): TestItem => ({
     id: nextId.current++,
     type: name,
@@ -147,9 +144,7 @@ export default function TestSequence() {
 
   const addTestToCurrent = (name: string) => {
     setSequences((prev) => {
-      // minimize all existing in tab
       const minimizedList = prev[tab].map((t) => ({ ...t, minimized: true }));
-      // add new test expanded AND close other open cards
       return { ...prev, [tab]: [...minimizedList, { ...makeTest(name), minimized: false }] };
     });
   };
@@ -186,7 +181,7 @@ export default function TestSequence() {
     updateTest(id, { minimized: !t.minimized });
   };
 
-  // DnD: cards
+  // Card DnD
   const onCardDragStart = (_: React.DragEvent<HTMLDivElement>, id: number) =>
     setDraggingCardId(id);
 
@@ -218,12 +213,97 @@ export default function TestSequence() {
     setDragOverEdge(null);
   };
 
-  // DnD: library → builder
-  const onBuilderDragOver = (e: React.DragEvent) => e.preventDefault();
-  const onBuilderDrop = () => {
-    if (!draggingLibTest) return;
-    addTestToCurrent(draggingLibTest);
-    setDraggingLibTest(null);
+  // Builder drag target — now supports both library items and FILE drops
+  const onBuilderDragEnter = (e: React.DragEvent) => {
+    // Show overlay if we’re dragging files
+    if (Array.from(e.dataTransfer.types).includes("Files")) {
+      setFileDragActive(true);
+    }
+  };
+
+  const onBuilderDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // allow drop
+    // Keep overlay if files are in play
+    if (Array.from(e.dataTransfer.types).includes("Files")) {
+      setFileDragActive(true);
+    }
+  };
+
+  const onBuilderDragLeave = (e: React.DragEvent) => {
+    // If moving within children, ignore; otherwise hide overlay
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setFileDragActive(false);
+    }
+  };
+
+  const onBuilderDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      // FILE DROP → try to load JSON
+      setFileDragActive(false);
+      const file = files[0];
+      if (!/\.json$/i.test(file.name) && file.type !== "application/json") {
+        alert("Please drop a .json RF test plan file.");
+        return;
+      }
+      try {
+        const parsed = await importTestPlanFromFile(file);
+        setTab(parsed.tab);
+        setSequences(parsed.sequences);
+        nextId.current = Number.isFinite(parsed.nextId)
+          ? parsed.nextId
+          : findNextIdFromSequences(parsed.sequences);
+        persistToLocal({ tab: parsed.tab, sequences: parsed.sequences, nextId: nextId.current });
+        console.log(`Loaded RF test plan from file saved at ${parsed.savedAtIso}`);
+      } catch (err: any) {
+        alert(err?.message || "Failed to load JSON file.");
+      }
+      return;
+    }
+
+    // LIBRARY DROP (old behavior)
+    if (draggingLibTest) {
+      addTestToCurrent(draggingLibTest);
+      setDraggingLibTest(null);
+    }
+  };
+
+  // Load via button (file input)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const handleClickLoad = () => fileInputRef.current?.click();
+  const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow same-file reselect later
+    if (!file) return;
+    try {
+      const parsed = await importTestPlanFromFile(file);
+      setTab(parsed.tab);
+      setSequences(parsed.sequences);
+      nextId.current = Number.isFinite(parsed.nextId)
+        ? parsed.nextId
+        : findNextIdFromSequences(parsed.sequences);
+      persistToLocal({ tab: parsed.tab, sequences: parsed.sequences, nextId: nextId.current });
+      console.log(`Loaded RF test plan from file saved at ${parsed.savedAtIso}`);
+    } catch (err: any) {
+      alert(err?.message || "Failed to load JSON file.");
+    }
+  };
+
+  // Save via “Save As…”
+  const handleClickSave = () => {
+    const payload: FilePersistedSeq = {
+      version: 1,
+      savedAtIso: new Date().toISOString(),
+      tab,
+      sequences,
+      nextId: nextId.current,
+    };
+    exportTestPlanToFile(
+      payload,
+      `rf-test-plan_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`
+    );
   };
 
   // -----------------------------
@@ -235,8 +315,8 @@ export default function TestSequence() {
     type: string;
     mode: "txPower" | "freqAccuracy";
     freqHz: number;
-    powerDbm?: number;  // LoRa/LTE
-    powerBle?: string;  // BLE
+    powerDbm?: number;
+    powerBle?: string;
     minValue?: number | null;
     maxValue?: number | null;
     ppmLimit?: number;
@@ -245,7 +325,6 @@ export default function TestSequence() {
 
   const playSingle = (t: TestItem) => {
     const mode: "txPower" | "freqAccuracy" = isFreqAccuracy(t) ? "freqAccuracy" : "txPower";
-
     const rawFreqHz = parseFirstFreqHz(t.frequencyText);
     const freqHz =
       rawFreqHz > 0
@@ -265,7 +344,6 @@ export default function TestSequence() {
         : 14;
 
     const powerBle = (t.powerBle || "").trim() || "31";
-
     let defaultMac: string | null = null;
     if (tab === "LTE") defaultMac = "80E1271FD8B8";
 
@@ -274,7 +352,6 @@ export default function TestSequence() {
       tab === "LoRa" ? `LoRa ${t.type || "Test"}` :
       t.type || "Test";
 
-    // tab-based PPM default: 20 for LoRa/LTE, 40 for BLE
     const tabPpmDefault = tab === "BLE" ? 40 : 20;
 
     const base = {
@@ -284,12 +361,11 @@ export default function TestSequence() {
       freqHz,
       minValue: t.minValue ?? null,
       maxValue: t.maxValue ?? null,
-      ppmLimit: t.ppmLimit ?? tabPpmDefault, // modal gets the value from the card (fallback by tab)
+      ppmLimit: t.ppmLimit ?? tabPpmDefault,
       defaultMac,
     };
 
     const payload = tab === "BLE" ? { ...base, powerBle } : { ...base, powerDbm };
-
     setRunDefaults(payload);
     setRunOpen(true);
   };
@@ -303,16 +379,22 @@ export default function TestSequence() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Builder (left, spans 2 cols) */}
-        <Card className="p-0 lg:col-span-2 tsq-card-like">
+        <Card className="p-0 lg:grid-cols-2 lg:col-span-2 tsq-card-like">
           <div
-            className={`tsq-builder ${draggingLibTest ? "is-drop-target" : ""}`}
+            className={[
+              "tsq-builder",
+              draggingLibTest ? "is-drop-target" : "",
+              fileDragActive ? "is-file-drop" : "",
+            ].join(" ")}
+            onDragEnter={onBuilderDragEnter}
             onDragOver={onBuilderDragOver}
+            onDragLeave={onBuilderDragLeave}
             onDrop={onBuilderDrop}
           >
-            {/* Header: TABS FIRST, then the title (as requested) */}
+            {/* Header */}
             <div className="tsq-card-head">
               <div className="tsq-head-left">
-                {/* Protocol Tabs (name + count only) */}
+                {/* Protocol Tabs */}
                 <div className="proto-tabs" role="tablist" aria-label="Protocol">
                   {(["LoRa", "LTE", "BLE"] as const).map((p) => {
                     const isActive = tab === p;
@@ -332,44 +414,65 @@ export default function TestSequence() {
                   })}
                 </div>
 
-                {/* Builder title after tabs */}
                 <div className="tsq-card-title mt-2">{tab} Builder</div>
                 <div className="tsq-card-sub">
-                  Drag tests from the library or reorder existing tests
+                  Drag tests from the library or drop a JSON plan to load
                 </div>
               </div>
 
               <div className="tsq-actions">
-                <button className="tsq-btn ghost">Load {tab.toUpperCase()}</button>
-                <button className="tsq-btn primary">Save {tab.toUpperCase()}</button>
+                <button className="tsq-btn ghost" onClick={handleClickLoad} title="Load test plan (all protocols)">
+                  <FolderDown size={16} />
+                  <span>Load Plan</span>
+                </button>
+                <button className="tsq-btn primary" onClick={handleClickSave} title="Save test plan (all protocols)">
+                  <Save size={16} />
+                  <span>Save Plan</span>
+                </button>
+
+                {/* Hidden file input for JSON */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={handleFileChange}
+                  style={{ display: "none" }}
+                />
               </div>
             </div>
 
+            {/* FILE DROP OVERLAY */}
+            {fileDragActive && (
+              <div className="tsq-file-overlay">
+                <div className="tsq-file-overlay-inner">
+                  <div className="tsq-file-icon">📄</div>
+                  <div className="tsq-file-title">Drop RF Test Plan (.json) to Load</div>
+                  <div className="tsq-file-sub">This will replace the current builder state for all protocols</div>
+                </div>
+              </div>
+            )}
+
             {/* Body */}
             <div className="px-1 tsq-card-body">
-              {/* Empty state / list */}
               {sequences[tab].length === 0 ? (
                 <div className="tsq-empty-wrap">
                   <div className="tsq-empty-icon">📥</div>
                   <div className="tsq-empty-title">No tests yet</div>
                   <div className="tsq-empty-sub">
-                    Drag a test from the right to get started
+                    Drag a test from the right or drop a plan JSON here
                   </div>
                 </div>
               ) : (
                 sequences[tab].map((t) => {
                   const isFA = /frequency\s*accuracy/i.test(t.type);
-
-                  // --- Header frequency label (fallback per protocol) ---
                   const hzFromInput = parseFirstFreqHz(t.frequencyText);
                   const hzDefault =
                     tab === "LTE" ? 1_880_000_000 :
                     tab === "LoRa" ? 918_500_000 :
-                    2_402_000_000; // BLE
+                    2_402_000_000;
                   const headerHz = hzFromInput || hzDefault;
-                  const headerFreqLabel = formatMHzLabel(headerHz); // e.g., "2402MHz"
+                  const headerFreqLabel = formatMHzLabel(headerHz);
 
-                  // --- Header power label: only for LoRa/LTE AND only for Tx Power (not Frequency Accuracy) ---
                   let headerPowerLabel: string | null = null;
                   if (!isFA && (tab === "LoRa" || tab === "LTE")) {
                     const parsed = parseFirstInt(t.powerText);
@@ -409,9 +512,7 @@ export default function TestSequence() {
                             <span className="tsq-title-text">
                               {t.type}
                               <span className="tsq-test-proto">&nbsp;· {tab}</span>
-                              {/* frequency in the header, same style as protocol */}
                               <span className="tsq-test-proto">&nbsp;{headerFreqLabel}</span>
-                              {/* power in header for LoRa/LTE Tx Power only */}
                               {headerPowerLabel && (
                                 <span className="tsq-test-proto">&nbsp;{headerPowerLabel}</span>
                               )}
@@ -450,6 +551,7 @@ export default function TestSequence() {
                               value={t.name}
                               onChange={(e) => updateTest(t.id, { name: e.target.value })}
                               placeholder="e.g., Tx Power"
+                              disabled
                             />
                           </div>
 

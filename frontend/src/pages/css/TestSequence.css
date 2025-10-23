@@ -52,8 +52,8 @@ Root Colors
   gap: 12px;
   background: var(--card-bg, #fff);
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  /* border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04); */
 }
 
 .tsq-head-left {
@@ -485,4 +485,63 @@ Root Colors
 .tsq-lib-sub {
   font-size: 12px;
   color: var(--sub-text-color);
+}
+
+/* =========================================
+   File Drop Overlay — Light Frosted + Black Text
+   (Blurs ONLY the .tsq-card-body)
+   ========================================= */
+
+.tsq-builder {
+  position: relative;
+}
+
+/* Overlay container (light, subtle) */
+.tsq-builder.is-file-drop .tsq-file-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px dashed rgba(0, 0, 0, 0.25); /* subtle neutral frame */
+  background: rgba(255, 255, 255, 0.25); /* light frosted veil */
+  backdrop-filter: blur(6px) brightness(1.05) saturate(1.1);
+  border-radius: 18px;
+  z-index: 5;
+}
+
+/* Center content with BLACK text */
+.tsq-file-overlay-inner {
+  text-align: center;
+  padding: 20px 28px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+  color: #111; /* black */
+  position: relative;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+.tsq-file-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+.tsq-file-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #111;
+} /* black */
+.tsq-file-sub {
+  font-size: 0.92em;
+  color: #333;
+  opacity: 0.95;
+} /* dark gray */
+
+/* ✅ Blur ONLY the builder body (keep tabs/header crisp) */
+.tsq-builder.is-file-drop .tsq-card-body {
+  filter: blur(3px) brightness(1.05);
+  transition: filter 0.25s ease;
+  pointer-events: none;
 }

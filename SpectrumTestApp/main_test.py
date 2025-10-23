@@ -116,30 +116,45 @@ def save_and_reset(device: BLE_Device):
     device.hwtp_set(command=commnad, payload=payload)
     device.Disconnect()
 
+
+
+
+
 def main():
+    # OBW Test
+    analyzer = SpectrumAnalyzer("172.16.10.1")
+    analyzer.connect()
+    
+    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=3.0, pct=99.0)
+    print(f"OBW (MaxHold 3s) = {bw_hz/1e3:.2f} kHz")
+
+    analyzer.disconnect()
+
+
+
     # mac_input = input("Please enter MAC Address:\n")
     # mac_address = parse_mac_to_hex(mac_input.strip())
     #
     # device = BLE_Device(mac_address)
-    device = BLE_Device(0x80E1271FD8DD)
-    device.Connect()
+    # device = BLE_Device(0x80E1271FD8DD)
+    # device.Connect()
 
-    # ble_cw(device=device, channel=0)
-    res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
-    print(res[1])
+    # # ble_cw(device=device, channel=0)
+    # res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
+    # print(res[1])
 
-    device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=25))
-    save_and_reset(device=device)
+    # device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=25))
+    # save_and_reset(device=device)
     
-    device = BLE_Device(0x80E1271FD8DD)
-    device.Connect()
+    # device = BLE_Device(0x80E1271FD8DD)
+    # device.Connect()
 
-    res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
-    # if str(res[1]) 
-    print(str(res[1]))
+    # res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
+    # # if str(res[1]) 
+    # print(str(res[1]))
 
 
-    device.Disconnect()
+    # device.Disconnect()
 
     # analyzer = SpectrumAnalyzer(ip_address="172.16.10.1")
 
