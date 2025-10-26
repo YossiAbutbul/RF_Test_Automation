@@ -116,6 +116,17 @@ def save_and_reset(device: BLE_Device):
     device.hwtp_set(command=commnad, payload=payload)
     device.Disconnect()
 
+def lora_modulated_cw(device: BLE_Device, freq, power, bw, dr):
+    command = cmd.HWTP_DBG_LORA_TEST_MODULATED_CW
+    payload = struct.HWTP_LoraTestModCw_t(
+        modem=enums.hwtp_radiomodem_e.HWTP_LORA,
+        freq=freq,
+        power=power,
+        bandwidth=bw,
+        datarate=dr
+        )
+    device.hwtp_set(command=command, payload=payload)
+
 
 
 
@@ -124,11 +135,20 @@ def main():
     # OBW Test
     analyzer = SpectrumAnalyzer("172.16.10.1")
     analyzer.connect()
-    
-    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=3.0, pct=99.0)
+
+    device = BLE_Device(0x80E1271FD8B8)
+    device.Connect()
+    analyzer.set_rbw(rbw=3, units="KHZ")
+    analyzer.set_vbw(vbw=10, units="KHZ")
+    analyzer.set_span(span=500, units="KHZ")
+    lora_modulated_cw(device, freq=918500000, power=14, bw=0, dr=7)
+
+    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
     print(f"OBW (MaxHold 3s) = {bw_hz/1e3:.2f} kHz")
 
-    analyzer.disconnect()
+    
+
+    # analyzer.disconnect()
 
 
 
