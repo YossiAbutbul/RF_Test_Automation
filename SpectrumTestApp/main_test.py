@@ -132,10 +132,8 @@ def lora_test_off(device: BLE_Device):
 
 
 
-
-
 def main():
-    # OBW Test
+    # ==== OBW Test ====
     analyzer = SpectrumAnalyzer("172.16.10.1")
     analyzer.connect()
 
