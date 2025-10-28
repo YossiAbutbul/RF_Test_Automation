@@ -10,11 +10,11 @@ import {
   type PersistedSeq as FilePersistedSeq,
 } from "@/utils/sequenceIO";
 
-// NOTE: include .ts/.tsx in relative imports for TS bundler/nodenext resolution
 import { Protocol, TestItem, PersistedSeq } from "./test-sequence/types";
 import {
   TEST_LIBRARY,
   isFreqAccuracy,
+  isObw,
   parseFirstFreqHz,
   parseFirstInt,
   formatMHzLabel,
@@ -27,10 +27,36 @@ import TestCard from "./test-sequence/TestCard";
 
 const SEQ_STORAGE_KEY = "rf-automation:test-sequence:v1";
 
+/** Expanded defaults for RunModal (includes OBW variants) */
+type RunDefaults = {
+  testName: string;
+  type: string;
+  mode: "txPower" | "freqAccuracy" | "obw";
+  freqHz: number;
+  powerDbm?: number;
+  powerBle?: string; // BLE tx power param hex (for txPower)
+  minValue?: number | null;
+  maxValue?: number | null;
+  ppmLimit?: number;
+  defaultMac?: string | null;
+
+  // OBW (LoRa)
+  loraObwBandwidthParam?: string;
+  loraObwDataRateParam?: string;
+
+  // OBW (LTE)
+  lteObwMcs?: string;
+  lteObwNbIndex?: string;
+  lteObwNumRbAlloc?: string;
+  lteObwPosRbAlloc?: string;
+
+  // OBW (BLE)
+  bleObwDataLength?: string;
+  bleObwPayloadPattern?: string;
+  bleObwPhyType?: string;
+};
+
 export default function TestSequence() {
-  // -------------------------------
-  // State
-  // -------------------------------
   const [tab, setTab] = React.useState<Protocol>("LoRa");
   const [sequences, setSequences] = React.useState<Record<Protocol, TestItem[]>>({
     LoRa: [],
@@ -39,31 +65,16 @@ export default function TestSequence() {
   });
   const nextId = React.useRef(1);
 
-  // DnD state (cards and library)
   const [draggingCardId, setDraggingCardId] = React.useState<number | null>(null);
   const [dragOverCardId, setDragOverCardId] = React.useState<number | null>(null);
   const [dragOverEdge, setDragOverEdge] = React.useState<"above" | "below" | null>(null);
   const [draggingLibTest, setDraggingLibTest] = React.useState<string | null>(null);
 
-  // File-drop overlay
   const [fileDragActive, setFileDragActive] = React.useState(false);
 
-  // Run Modal
   const [runOpen, setRunOpen] = React.useState(false);
-  const [runDefaults, setRunDefaults] = React.useState<{
-    testName: string;
-    type: string;
-    mode: "txPower" | "freqAccuracy";
-    freqHz: number;
-    powerDbm?: number;
-    powerBle?: string;
-    minValue?: number | null;
-    maxValue?: number | null;
-    ppmLimit?: number;
-    defaultMac?: string | null;
-  } | null>(null);
+  const [runDefaults, setRunDefaults] = React.useState<RunDefaults | null>(null);
 
-  // File input ref for "Load"
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // -------------------------------
@@ -106,6 +117,57 @@ export default function TestSequence() {
   }, [tab, sequences]);
 
   // -------------------------------
+  // Helpers: per-protocol defaults
+  // -------------------------------
+  const defaultsFor = (p: Protocol, type: string): Partial<TestItem> => {
+    // common sensible defaults
+    if (/frequency\s*accuracy/i.test(type)) {
+      return {
+        frequencyText: p === "LTE" ? "1880" : p === "LoRa" ? "918.5" : "2402",
+        powerText: p === "LTE" ? "23" : p === "LoRa" ? "14" : undefined,
+        ppmLimit: p === "BLE" ? 40 : 20,
+      };
+    }
+
+    if (/^obw$/i.test(type)) {
+      if (p === "LoRa") {
+        return {
+          frequencyText: "918.5",
+          powerText: "14",
+          bandwidthParam: "0",
+          dataRateParam: "7",
+        };
+      }
+      if (p === "LTE") {
+        return {
+          frequencyText: "1880", // (will later be mapped from EARFCN YAML)
+          powerText: "23",
+          mcs: "5",
+          nbIndex: "0",
+          numRbAlloc: "6",
+          posRbAlloc: "0",
+        };
+      }
+      // BLE
+      return {
+        frequencyText: "2402",
+        dataLength: "1",
+        payloadPattern: "1",
+        phyType: "2",
+      };
+    }
+
+    // Tx Power (default)
+    return {
+      frequencyText: p === "LTE" ? "1880" : p === "LoRa" ? "918.5" : "2402",
+      powerText: p === "LTE" ? "23" : p === "LoRa" ? "14" : undefined,
+      powerBle: p === "BLE" ? "31" : undefined,
+      minValue: undefined,
+      maxValue: undefined,
+    };
+  };
+
+  // -------------------------------
   // Mutators
   // -------------------------------
   const makeTest = (name: string): TestItem => ({
@@ -113,11 +175,11 @@ export default function TestSequence() {
     type: name,
     name,
     minimized: false,
+    ...defaultsFor(tab, name), // inject actual default values as real field values
   });
 
   const addTestToCurrent = (name: string) => {
     setSequences((prev) => {
-      // minimize existing before adding (same UX)
       const minimizedList = prev[tab].map((t) => ({ ...t, minimized: true }));
       return { ...prev, [tab]: [...minimizedList, { ...makeTest(name), minimized: false }] };
     });
@@ -288,10 +350,16 @@ export default function TestSequence() {
   // Run modal wiring
   // -------------------------------
   const playSingle = (t: TestItem) => {
-    const mode: "txPower" | "freqAccuracy" = isFreqAccuracy(t) ? "freqAccuracy" : "txPower";
+    const isFA = isFreqAccuracy(t);
+    const isOBW = isObw(t);
+    const mode: "txPower" | "freqAccuracy" | "obw" = isOBW ? "obw" : isFA ? "freqAccuracy" : "txPower";
+
+    // frequency: use input if present (even 0 MHz wouldn’t make sense, but we respect input presence),
+    // otherwise protocol default
+    const freqHasInput = (t.frequencyText ?? "").trim() !== "";
     const rawFreqHz = parseFirstFreqHz(t.frequencyText);
     const freqHz =
-      rawFreqHz > 0
+      freqHasInput && rawFreqHz > 0
         ? rawFreqHz
         : tab === "LTE"
         ? 1_880_000_000
@@ -299,15 +367,17 @@ export default function TestSequence() {
         ? 918_500_000
         : 2_402_000_000;
 
+    // power: accept 0 — only fall back if NO input at all
+    const powerHasInput = (t.powerText ?? "").trim() !== "";
     const powerDbmParsed = parseFirstInt(t.powerText);
-    const powerDbm =
-      Number.isFinite(powerDbmParsed) && powerDbmParsed !== 0
-        ? powerDbmParsed
-        : tab === "LTE"
-        ? 23
-        : 14;
+    const powerDbm = powerHasInput
+      ? powerDbmParsed // includes 0
+      : tab === "LTE"
+      ? 23
+      : 14;
 
     const powerBle = (t.powerBle || "").trim() || "31";
+
     let defaultMac: string | null = null;
     if (tab === "LTE") defaultMac = "80E1271FD8B8";
 
@@ -318,7 +388,7 @@ export default function TestSequence() {
 
     const tabPpmDefault = tab === "BLE" ? 40 : 20;
 
-    const base = {
+    const base: RunDefaults = {
       testName: nameForModal,
       type: t.type,
       mode,
@@ -329,7 +399,29 @@ export default function TestSequence() {
       defaultMac,
     };
 
-    const payload = tab === "BLE" ? { ...base, powerBle } : { ...base, powerDbm };
+    const obwExtras =
+      isOBW && tab === "LoRa"
+        ? { loraObwBandwidthParam: t.bandwidthParam ?? "", loraObwDataRateParam: t.dataRateParam ?? "" }
+        : isOBW && tab === "LTE"
+        ? {
+            lteObwMcs: t.mcs ?? "5",
+            lteObwNbIndex: t.nbIndex ?? "0",
+            lteObwNumRbAlloc: t.numRbAlloc ?? "",
+            lteObwPosRbAlloc: t.posRbAlloc ?? "",
+          }
+        : isOBW && tab === "BLE"
+        ? {
+            bleObwDataLength: t.dataLength ?? "1",
+            bleObwPayloadPattern: t.payloadPattern ?? "1",
+            bleObwPhyType: t.phyType ?? "2",
+          }
+        : {};
+
+    const payload: RunDefaults =
+      tab === "BLE"
+        ? { ...base, powerBle, ...obwExtras }
+        : { ...base, powerDbm, ...obwExtras };
+
     setRunDefaults(payload);
     setRunOpen(true);
   };
@@ -358,16 +450,10 @@ export default function TestSequence() {
             {/* Header */}
             <div className="tsq-card-head">
               <div className="tsq-head-left">
-                <ProtocolTabs
-                  tab={tab}
-                  sequences={sequences}
-                  onChange={setTab}
-                />
+                <ProtocolTabs tab={tab} sequences={sequences} onChange={setTab} />
 
                 <div className="tsq-card-title mt-2">{tab} Builder</div>
-                <div className="tsq-card-sub">
-                  Drag tests from the library or drop a JSON plan to load
-                </div>
+                <div className="tsq-card-sub">Drag tests from the library or drop a JSON plan to load</div>
               </div>
 
               <BuilderHeaderActions
@@ -397,31 +483,23 @@ export default function TestSequence() {
                 <div className="tsq-empty-wrap">
                   <div className="tsq-empty-icon">📥</div>
                   <div className="tsq-empty-title">No tests yet</div>
-                  <div className="tsq-empty-sub">
-                    Drag a test from the right or drop a plan JSON here
-                  </div>
+                  <div className="tsq-empty-sub">Drag a test from the right or drop a plan JSON here</div>
                 </div>
               ) : (
                 sequences[tab].map((t) => {
                   const isFA = isFreqAccuracy(t);
-                  const hzFromInput = parseFirstFreqHz(t.frequencyText);
-                  const hzDefault =
-                    tab === "LTE" ? 1_880_000_000 :
-                    tab === "LoRa" ? 918_500_000 :
-                    2_402_000_000;
-                  const headerHz = hzFromInput || hzDefault;
-                  const headerFreqLabel = formatMHzLabel(headerHz);
 
+                  // show frequency in header only if user left something in the field
+                  const hasFreq = (t.frequencyText ?? "").trim() !== "";
+                  const hzFromInput = hasFreq ? parseFirstFreqHz(t.frequencyText) : 0;
+                  const headerFreqLabel = hasFreq && hzFromInput > 0 ? formatMHzLabel(hzFromInput) : "";
+
+                  // show power in header only if user left something in the field
                   let headerPowerLabel: string | null = null;
-                  if (!isFA && (tab === "LoRa" || tab === "LTE")) {
-                    const parsed = parseFirstInt(t.powerText);
-                    const powerDbm =
-                      Number.isFinite(parsed) && parsed !== 0
-                        ? parsed
-                        : tab === "LTE"
-                        ? 23
-                        : 14;
-                    headerPowerLabel = `${powerDbm}dBm`;
+                  const powerHasInput = (t.powerText ?? "").trim() !== "";
+                  if (!isFA && (tab === "LoRa" || tab === "LTE") && powerHasInput) {
+                    const parsed = parseFirstInt(t.powerText); // can be 0
+                    headerPowerLabel = `${parsed}dBm`;
                   }
 
                   return (
@@ -482,8 +560,21 @@ export default function TestSequence() {
           maxValue={runDefaults.maxValue ?? null}
           defaultPpmLimit={runDefaults.ppmLimit ?? (tab === "BLE" ? 40 : 20)}
           {...(tab === "BLE"
-            ? { bleDefaultPowerParamHex: runDefaults.powerBle || "31" }
-            : { defaultPowerDbm: runDefaults.powerDbm ?? 14 })}
+            ? {
+                bleDefaultPowerParamHex: runDefaults.powerBle || "31",
+                bleObwDataLength: runDefaults.bleObwDataLength,
+                bleObwPayloadPattern: runDefaults.bleObwPayloadPattern,
+                bleObwPhyType: runDefaults.bleObwPhyType,
+              }
+            : {
+                defaultPowerDbm: runDefaults.powerDbm ?? 14, // 0 stays 0; only undefined falls back
+                loraObwBandwidthParam: runDefaults.loraObwBandwidthParam,
+                loraObwDataRateParam: runDefaults.loraObwDataRateParam,
+                lteObwMcs: runDefaults.lteObwMcs,
+                lteObwNbIndex: runDefaults.lteObwNbIndex,
+                lteObwNumRbAlloc: runDefaults.lteObwNumRbAlloc,
+                lteObwPosRbAlloc: runDefaults.lteObwPosRbAlloc,
+              })}
         />
       )}
     </div>

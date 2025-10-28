@@ -548,3 +548,14 @@ Root Colors
   transition: filter 0.25s ease;
   pointer-events: none;
 }
+
+.tsq-test-card.not-draggable .tsq-test-drag-handle {
+  cursor: default;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tsq-test-card.draggable .tsq-test-drag-handle {
+  cursor: grab;
+  opacity: 1;
+}

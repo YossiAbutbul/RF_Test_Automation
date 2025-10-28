@@ -3,7 +3,7 @@ import LteRunModal from "./LteRunModal";
 import BleRunModal from "./BleRunModal";
 
 export type Protocol = "LoRa" | "LTE" | "BLE";
-export type TestMode = "txPower" | "freqAccuracy";
+export type TestMode = "txPower" | "freqAccuracy" | "obw";
 
 type Props = {
   open: boolean;
@@ -24,15 +24,31 @@ type Props = {
   // Frequency accuracy ppm limit
   defaultPpmLimit?: number;
 
-  // BLE-specific
+  // BLE-specific (Tx Power)
   bleDefaultPowerParamHex?: string;
+
+  // OBW defaults (optional — each modal has sensible internal defaults)
+  // LoRa
+  loraObwBandwidthParam?: string;
+  loraObwDataRateParam?: string;
+
+  // LTE
+  lteObwMcs?: string;       // default "5"
+  lteObwNbIndex?: string;   // default "0"
+  lteObwNumRbAlloc?: string;
+  lteObwPosRbAlloc?: string;
+
+  // BLE
+  bleObwDataLength?: string;     // default "1"
+  bleObwPayloadPattern?: string; // default "1"
+  bleObwPhyType?: string;        // default "2"
 };
 
 export default function RunModal(props: Props) {
   const { protocol } = props;
 
   if (protocol === "BLE") {
-    // BLE modal: unified for both Tx Power and Frequency Accuracy
+    // BLE modal supports txPower, freqAccuracy, and obw
     return (
       <BleRunModal
         open={props.open}
@@ -44,6 +60,10 @@ export default function RunModal(props: Props) {
         minValue={props.minValue ?? null}
         maxValue={props.maxValue ?? null}
         defaultPpmLimit={props.defaultPpmLimit ?? 40}
+        // OBW defaults
+        obwDataLength={props.bleObwDataLength}
+        obwPayloadPattern={props.bleObwPayloadPattern}
+        obwPhyType={props.bleObwPhyType}
       />
     );
   }
@@ -61,6 +81,11 @@ export default function RunModal(props: Props) {
         minValue={props.minValue ?? null}
         maxValue={props.maxValue ?? null}
         defaultPpmLimit={props.defaultPpmLimit ?? 20}
+        // OBW defaults
+        obwMcs={props.lteObwMcs}
+        obwNbIndex={props.lteObwNbIndex}
+        obwNumRbAlloc={props.lteObwNumRbAlloc}
+        obwPosRbAlloc={props.lteObwPosRbAlloc}
       />
     );
   }
@@ -78,6 +103,9 @@ export default function RunModal(props: Props) {
       minValue={props.minValue ?? null}
       maxValue={props.maxValue ?? null}
       defaultPpmLimit={props.defaultPpmLimit ?? 20}
+      // OBW defaults
+      obwBandwidthParam={props.loraObwBandwidthParam}
+      obwDataRateParam={props.loraObwDataRateParam}
     />
   );
 }
