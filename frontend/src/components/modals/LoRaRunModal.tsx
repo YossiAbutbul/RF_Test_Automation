@@ -36,13 +36,14 @@ const ORDER: StepKey[] = [
 const initSteps = (): Record<StepKey, StepStatus> =>
   ORDER.reduce((a, k) => ((a[k] = k === "connectAnalyzer" ? "doing" : "idle"), a), {} as Record<StepKey, StepStatus>);
 
-// --- helper: thousands separators for integers ---
 const fmtIntWithCommas = (n: number) => Math.round(n).toLocaleString("en-US");
+
+type Mode = "txPower" | "freqAccuracy" | "obw";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  mode?: "txPower" | "freqAccuracy";
+  mode?: Mode;
   testName?: string;
 
   defaultFreqHz?: number;
@@ -53,24 +54,34 @@ type Props = {
   maxValue?: number | null;
 
   defaultPpmLimit?: number;
+
+  // OBW defaults (LoRa)
+  obwBandwidthParam?: string;
+  obwDataRateParam?: string;
 };
 
 export default function LoRaRunModal({
   open,
   onClose,
   mode = "txPower",
-  testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
+  testName = mode === "freqAccuracy" ? "Frequency Accuracy" : mode === "obw" ? "OBW" : "Tx Power",
   defaultFreqHz = 918_500_000,
   defaultPowerDbm = 14,
   defaultMac = "80E1271FD8B8",
   minValue = null,
   maxValue = null,
   defaultPpmLimit = 20,
+  obwBandwidthParam = "",
+  obwDataRateParam = "",
 }: Props) {
   const [mac, setMac] = useState(defaultMac);
   const [freqHz, setFreqHz] = useState(defaultFreqHz);
   const [powerDbm, setPowerDbm] = useState(defaultPowerDbm);
   const [ppmLimit, setPpmLimit] = useState<number>(defaultPpmLimit);
+
+  // OBW (LoRa)
+  const [bwParam, setBwParam] = useState<string>(obwBandwidthParam);
+  const [drParam, setDrParam] = useState<string>(obwDataRateParam);
 
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<Record<StepKey, StepStatus>>(initSteps);
@@ -85,8 +96,11 @@ export default function LoRaRunModal({
 
   useEffect(() => { if (!open) { abort(); reset(); } }, [open]); // eslint-disable-line
 
-  const canStart = useMemo(() => Number.isFinite(freqHz) && (mode === "freqAccuracy" || Number.isFinite(powerDbm)), [freqHz, powerDbm, mode]);
-  const showLogPanel = running || logs.length > 0;
+  const canStart = useMemo(() => {
+    if (mode === "freqAccuracy") return Number.isFinite(freqHz);
+    if (mode === "obw") return Number.isFinite(freqHz) && Number.isFinite(powerDbm);
+    return Number.isFinite(freqHz) && Number.isFinite(powerDbm);
+  }, [freqHz, powerDbm, mode]);
 
   const pushLog = (line: string) => setLogs((p) => [...p, `[${new Date().toLocaleTimeString()}] ${line}`]);
 
@@ -100,6 +114,8 @@ export default function LoRaRunModal({
     setFreqHz(defaultFreqHz);
     setPowerDbm(defaultPowerDbm);
     setPpmLimit(defaultPpmLimit);
+    setBwParam(obwBandwidthParam ?? "");
+    setDrParam(obwDataRateParam ?? "");
   };
 
   const setStepSeq = (key: StepKey, status: StepStatus) =>
@@ -127,6 +143,14 @@ export default function LoRaRunModal({
 
     reset(); setRunning(true);
     pushLog(`Starting LoRa ${testName}...`);
+
+    if (mode === "obw") {
+      // Wire up to backend later (LoRa.runLoRaObw({...}))
+      pushLog(`OBW (LoRa) — freq=${freqHz} Hz, power=${powerDbm} dBm, BW=${bwParam}, DR=${drParam}`);
+      pushLog("OBW runner not wired yet. This is a UI-only placeholder.");
+      setRunning(false);
+      return;
+    }
 
     const handlers = {
       onStart: (_e: AnyEvt) => pushLog("Run started"),
@@ -193,19 +217,35 @@ export default function LoRaRunModal({
   return (
     <div className="tsq-modal-backdrop" role="dialog" aria-modal="true">
       <div className={`tsq-modal ${running ? "is-running" : ""}`}>
-        <div className="tsq-run-header">{running && <div className="tsq-spinner" />}<div className="tsq-modal-title">Run {testName} (LoRa)</div></div>
+        <div className="tsq-run-header">
+          {running && <div className="tsq-spinner" />}
+          <div className="tsq-modal-title">Run {testName} (LoRa)</div>
+        </div>
 
-        <div className={`tsq-run-form ${mode === "txPower" ? "txpower-grid" : "freqacc-grid"}`}>
+        <div className={`tsq-run-form ${mode === "freqAccuracy" ? "freqacc-grid" : "txpower-grid"}`}>
           <label className="tsq-field"><span>MAC</span>
             <input className={`tsq-input${mac.trim().length < 6 ? " tsq-mac-warn" : ""}`} value={mac} onChange={(e) => setMac(e.target.value)} disabled={running} />
           </label>
           <label className="tsq-field"><span>Frequency [Hz]</span>
             <input className="tsq-input" type="number" value={freqHz} onChange={(e) => setFreqHz(Number(e.target.value))} disabled={running} />
           </label>
+
           {mode === "freqAccuracy" ? (
             <label className="tsq-field"><span>PPM Limit</span>
               <input className="tsq-input" type="number" value={ppmLimit} onChange={(e) => setPpmLimit(Number(e.target.value))} disabled={running} />
             </label>
+          ) : mode === "obw" ? (
+            <>
+              <label className="tsq-field"><span>Power [dBm]</span>
+                <input className="tsq-input" type="number" value={powerDbm} onChange={(e) => setPowerDbm(Number(e.target.value))} disabled={running} />
+              </label>
+              <label className="tsq-field"><span>Bandwidth Param</span>
+                <input className="tsq-input" value={bwParam} onChange={(e) => setBwParam(e.target.value)} disabled={running} placeholder="0–2" />
+              </label>
+              <label className="tsq-field"><span>Data Rate Param</span>
+                <input className="tsq-input" value={drParam} onChange={(e) => setDrParam(e.target.value)} disabled={running} placeholder="0–13" />
+              </label>
+            </>
           ) : (
             <>
               <label className="tsq-field"><span>Power [dBm]</span>
@@ -240,22 +280,14 @@ export default function LoRaRunModal({
         <div className="tsq-result">
           {mode === "freqAccuracy" ? (
             <>
-              {resFa?.measuredHz != null && (
-                <span>Measured: <b>{fmtIntWithCommas(resFa.measuredHz)} Hz</b></span>
-              )}
-              {resFa?.errorHz != null && (
-                <span>&nbsp; Δf: <b>{fmtIntWithCommas(resFa.errorHz)} Hz</b></span>
-              )}
-              {resFa?.errorPpm != null && (
-                <span>&nbsp; Error: <b>{resFa.errorPpm.toFixed(2)} ppm</b></span>
-              )}
-              {resFa?.pass != null && (
-                <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>{resFa.pass ? "PASS" : "FAIL"}</span>
-              )}
+              {resFa?.measuredHz != null && <span>Measured: <b>{fmtIntWithCommas(resFa.measuredHz)} Hz</b></span>}
+              {resFa?.errorHz != null && <span>&nbsp; Δf: <b>{fmtIntWithCommas(resFa.errorHz)} Hz</b></span>}
+              {resFa?.errorPpm != null && <span>&nbsp; Error: <b>{resFa.errorPpm.toFixed(2)} ppm</b></span>}
+              {resFa?.pass != null && <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>{resFa.pass ? "PASS" : "FAIL"}</span>}
             </>
           ) : (
             <>
-              {resTx?.measuredDbm != null && <span> Measured: <b>{resTx.measuredDbm.toFixed(2)} dBm</b></span>}
+              {resTx?.measuredDbm != null && <span>Measured: <b>{resTx.measuredDbm.toFixed(2)} dBm</b></span>}
               {resTx?.pass != null && <span className={`tsq-chip ${resTx.pass ? "pass" : "fail"}`}>{resTx.pass ? "PASS" : "FAIL"}</span>}
             </>
           )}

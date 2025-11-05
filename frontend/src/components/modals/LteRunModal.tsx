@@ -39,13 +39,14 @@ const ORDER: StepKey[] = [
 const initSteps = (): Record<StepKey, StepStatus> =>
   ORDER.reduce((a, k) => ((a[k] = k === "connectAnalyzer" ? "doing" : "idle"), a), {} as Record<StepKey, StepStatus>);
 
-// --- helper: thousands separators for integers ---
 const fmtIntWithCommas = (n: number) => Math.round(n).toLocaleString("en-US");
+
+type Mode = "txPower" | "freqAccuracy" | "obw";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  mode?: "txPower" | "freqAccuracy";
+  mode?: Mode;
   testName?: string;
 
   defaultFreqHz?: number;
@@ -56,24 +57,40 @@ type Props = {
   maxValue?: number | null;
 
   defaultPpmLimit?: number;
+
+  // OBW (LTE)
+  obwMcs?: string;       // default "5"
+  obwNbIndex?: string;   // default "0"
+  obwNumRbAlloc?: string;
+  obwPosRbAlloc?: string;
 };
 
 export default function LteRunModal({
   open,
   onClose,
   mode = "txPower",
-  testName = mode === "freqAccuracy" ? "Frequency Accuracy" : "Tx Power",
+  testName = mode === "freqAccuracy" ? "Frequency Accuracy" : mode === "obw" ? "OBW" : "Tx Power",
   defaultFreqHz = 1_715_000_000,
   defaultPowerDbm = 23,
   defaultMac = "80E1271FD8B8",
   minValue = null,
   maxValue = null,
   defaultPpmLimit = 20,
+  obwMcs = "5",
+  obwNbIndex = "0",
+  obwNumRbAlloc = "",
+  obwPosRbAlloc = "",
 }: Props) {
   const [mac, setMac] = useState(defaultMac);
   const [freqHz, setFreqHz] = useState(defaultFreqHz);
   const [powerDbm, setPowerDbm] = useState(defaultPowerDbm);
   const [ppmLimit, setPpmLimit] = useState<number>(defaultPpmLimit);
+
+  // OBW (LTE)
+  const [mcs, setMcs] = useState(obwMcs);
+  const [nbIndex, setNbIndex] = useState(obwNbIndex);
+  const [numRb, setNumRb] = useState(obwNumRbAlloc);
+  const [posRb, setPosRb] = useState(obwPosRbAlloc);
 
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<Record<StepKey, StepStatus>>(initSteps);
@@ -87,8 +104,11 @@ export default function LteRunModal({
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [logs]);
   useEffect(() => { if (!open) { abort(); reset(); } }, [open]); // eslint-disable-line
 
-  const canStart = useMemo(() => Number.isFinite(freqHz) && (mode === "freqAccuracy" || Number.isFinite(powerDbm)), [freqHz, powerDbm, mode]);
-  const showLogPanel = running || logs.length > 0;
+  const canStart = useMemo(() => {
+    if (mode === "freqAccuracy") return Number.isFinite(freqHz);
+    if (mode === "obw") return Number.isFinite(freqHz) && Number.isFinite(powerDbm);
+    return Number.isFinite(freqHz) && Number.isFinite(powerDbm);
+  }, [freqHz, powerDbm, mode]);
 
   const pushLog = (line: string) => setLogs((p) => [...p, `[${new Date().toLocaleTimeString()}] ${line}`]);
 
@@ -102,6 +122,10 @@ export default function LteRunModal({
     setFreqHz(defaultFreqHz);
     setPowerDbm(defaultPowerDbm);
     setPpmLimit(defaultPpmLimit);
+    setMcs(obwMcs);
+    setNbIndex(obwNbIndex);
+    setNumRb(obwNumRbAlloc);
+    setPosRb(obwPosRbAlloc);
   };
 
   const setStepSeq = (key: StepKey, status: StepStatus) =>
@@ -129,6 +153,14 @@ export default function LteRunModal({
 
     reset(); setRunning(true);
     pushLog(`Starting LTE ${testName}...`);
+
+    if (mode === "obw") {
+      // Wire up to backend later (LTE.runLteObw({...}))
+      pushLog(`OBW (LTE) — freq=${freqHz} Hz, power=${powerDbm} dBm, MCS=${mcs}, NB=${nbIndex}, RBs=${numRb}, Pos=${posRb}`);
+      pushLog("OBW runner not wired yet. This is a UI-only placeholder.");
+      setRunning(false);
+      return;
+    }
 
     const handlers = {
       onStart: (_e: AnyEvt) => pushLog("Run started"),
@@ -192,18 +224,37 @@ export default function LteRunModal({
       <div className={`tsq-modal ${running ? "is-running" : ""}`}>
         <div className="tsq-run-header">{running && <div className="tsq-spinner" />}<div className="tsq-modal-title">Run {testName} (LTE)</div></div>
 
-        <div className={`tsq-run-form ${mode === "txPower" ? "txpower-grid" : "freqacc-grid"}`}>
+        <div className={`tsq-run-form ${mode === "freqAccuracy" ? "freqacc-grid" : "txpower-grid"}`}>
           <label className="tsq-field"><span>MAC</span>
             <input className={`tsq-input${mac.trim().length < 6 ? " tsq-mac-warn" : ""}`} value={mac} onChange={(e) => setMac(e.target.value)} disabled={running} />
           </label>
           <label className="tsq-field"><span>Frequency [Hz]</span>
             <input className="tsq-input" type="number" value={freqHz} onChange={(e) => setFreqHz(Number(e.target.value))} disabled={running} />
+            {/* later: map from EARFCN in YAML */}
           </label>
 
           {mode === "freqAccuracy" ? (
             <label className="tsq-field"><span>PPM Limit</span>
               <input className="tsq-input" type="number" value={ppmLimit} onChange={(e) => setPpmLimit(Number(e.target.value))} disabled={running} />
             </label>
+          ) : mode === "obw" ? (
+            <>
+              <label className="tsq-field"><span>Power [dBm]</span>
+                <input className="tsq-input" type="number" value={powerDbm} onChange={(e) => setPowerDbm(Number(e.target.value))} disabled={running} />
+              </label>
+              <label className="tsq-field"><span>MCS</span>
+                <input className="tsq-input" value={mcs} onChange={(e) => setMcs(e.target.value)} disabled={running} placeholder="default 5" />
+              </label>
+              <label className="tsq-field"><span>NB Index</span>
+                <input className="tsq-input" value={nbIndex} onChange={(e) => setNbIndex(e.target.value)} disabled={running} placeholder="default 0" />
+              </label>
+              <label className="tsq-field"><span>Number of RB Allocation</span>
+                <input className="tsq-input" value={numRb} onChange={(e) => setNumRb(e.target.value)} disabled={running} />
+              </label>
+              <label className="tsq-field"><span>Position of RB Allocation</span>
+                <input className="tsq-input" value={posRb} onChange={(e) => setPosRb(e.target.value)} disabled={running} />
+              </label>
+            </>
           ) : (
             <>
               <label className="tsq-field"><span>Power [dBm]</span>
@@ -238,18 +289,10 @@ export default function LteRunModal({
         <div className="tsq-result">
           {mode === "freqAccuracy" ? (
             <>
-              {resFa?.measuredHz != null && (
-                <span>Measured: <b>{fmtIntWithCommas(resFa.measuredHz)} Hz</b></span>
-              )}
-              {resFa?.errorHz != null && (
-                <span>&nbsp; Δf: <b>{fmtIntWithCommas(resFa.errorHz)} Hz</b></span>
-              )}
-              {resFa?.errorPpm != null && (
-                <span>&nbsp; Error: <b>{resFa.errorPpm.toFixed(2)} ppm</b></span>
-              )}
-              {resFa?.pass != null && (
-                <span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>{resFa.pass ? "PASS" : "FAIL"}</span>
-              )}
+              {resFa?.measuredHz != null && (<span>Measured: <b>{fmtIntWithCommas(resFa.measuredHz)} Hz</b></span>)}
+              {resFa?.errorHz != null && (<span>&nbsp; Δf: <b>{fmtIntWithCommas(resFa.errorHz)} Hz</b></span>)}
+              {resFa?.errorPpm != null && (<span>&nbsp; Error: <b>{resFa.errorPpm.toFixed(2)} ppm</b></span>)}
+              {resFa?.pass != null && (<span className={`tsq-chip ${resFa.pass ? "pass" : "fail"}`}>{resFa.pass ? "PASS" : "FAIL"}</span>)}
             </>
           ) : (
             <>
