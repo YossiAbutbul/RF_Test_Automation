@@ -1,11 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Circle, Loader2, XCircle } from "lucide-react";
-import { BLE } from "@/tests/runners"; // expects BLE.runBLETxPower / runBLEFreqAccuracy
-import "../css/RunModal.css";
+import { BLE } from "@/tests/runners";
+import { StepStatus, TestMode } from "../../types/test-execution.types";
+import "../RunModal/RunModal.css";
 
-type TestMode = "txPower" | "freqAccuracy" | "obw";
-type StepKey = "connectAnalyzer" | "configureAnalyzer" | "connectDut" | "cwOn" | "saveReset" | "reconnectDut" | "toneStart" | "measure" | "close";
-type StepStatus = "idle" | "doing" | "done" | "error";
+// BLE-specific step types
+type TxStepKey =
+  | "connectAnalyzer"
+  | "configureAnalyzer"
+  | "connectDut"
+  | "cwOn"
+  | "saveReset"
+  | "reconnectDut"
+  | "toneStart"
+  | "measure"
+  | "close";
+
+type FaStepKey =
+  | "connectAnalyzer"
+  | "configureAnalyzer"
+  | "connectDut"
+  | "cwOn"
+  | "measure"
+  | "close";
+
+type StepKey = TxStepKey | FaStepKey;
 
 const LABEL: Record<StepKey, string> = {
   connectAnalyzer: "Connect to spectrum analyzer",
@@ -29,7 +48,7 @@ function initSteps(order: StepKey[]): Record<StepKey, StepStatus> {
 
 function deriveBleChannel(freqHz: number | undefined | null): number {
   const f = Number(freqHz ?? 0);
-  if (!Number.isFinite(f) || f <= 0) return 0; // default ch=0 (2402 MHz)
+  if (!Number.isFinite(f) || f <= 0) return 0;
   const ch = Math.round((f - 2_402_000_000) / 2_000_000);
   return Math.max(0, Math.min(39, ch));
 }
@@ -43,20 +62,20 @@ type Props = {
 
   // Common inputs
   defaultMac?: string;
-  defaultFreqHz?: number; // used to derive channel for backend
+  defaultFreqHz?: number;
 
   // Tx Power specific
-  defaultPowerParamHex?: string; // e.g. "0x1F" or "31"
+  defaultPowerParamHex?: string;
   minValue?: number | null;
   maxValue?: number | null;
 
   // Frequency Accuracy specific
-  defaultPpmLimit?: number; // e.g. 40
+  defaultPpmLimit?: number;
 
   // OBW (BLE)
-  obwDataLength?: string;     // default "1"
-  obwPayloadPattern?: string; // default "1"
-  obwPhyType?: string;        // default "2"
+  obwDataLength?: string;
+  obwPayloadPattern?: string;
+  obwPhyType?: string;
 };
 
 export default function BleRunModal({
@@ -80,10 +99,10 @@ export default function BleRunModal({
   const [freqHz, setFreqHz] = useState(defaultFreqHz);
   const channel = useMemo(() => deriveBleChannel(freqHz), [freqHz]);
 
-  const [powerParam, setPowerParam] = useState(defaultPowerParamHex); // txPower
-  const [ppmLimit, setPpmLimit] = useState<number | null>(defaultPpmLimit ?? 40); // freqAccuracy
+  const [powerParam, setPowerParam] = useState(defaultPowerParamHex);
+  const [ppmLimit, setPpmLimit] = useState<number | null>(defaultPpmLimit ?? 40);
 
-  // OBW (BLE)
+  // OBW
   const [dataLen, setDataLen] = useState<string>(obwDataLength);
   const [pattern, setPattern] = useState<string>(obwPayloadPattern);
   const [phy, setPhy] = useState<string>(obwPhyType);
@@ -102,17 +121,11 @@ export default function BleRunModal({
   const [errorPpm, setErrorPpm] = useState<number | undefined>(undefined);
   const [passFa, setPassFa] = useState<boolean | undefined>(undefined);
 
-  // SSE
   const esRef = useRef<EventSource | null>(null);
-
-  // log autoscroll
   const logRef = useRef<HTMLPreElement | null>(null);
-  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [logs]);
 
-  useEffect(() => {
-    if (!open) resetModal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode]);
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [logs]);
+  useEffect(() => { if (!open) resetModal(); }, [open, mode]);
 
   const pushLog = (line: string) => setLogs((p) => [...p, `[${new Date().toLocaleTimeString()}] ${line}`]);
 
@@ -120,23 +133,19 @@ export default function BleRunModal({
     setRunning(false);
     setSteps(initSteps(ORDER));
     setLogs([]);
-
     setMeasuredDbm(undefined);
     setPassTx(undefined);
     setMeasuredHz(undefined);
     setErrorHz(undefined);
     setErrorPpm(undefined);
     setPassFa(undefined);
-
     setMac(defaultMac);
     setFreqHz(defaultFreqHz);
     setPowerParam(defaultPowerParamHex);
     setPpmLimit(defaultPpmLimit ?? 40);
-
     setDataLen(obwDataLength);
     setPattern(obwPayloadPattern);
     setPhy(obwPhyType);
-
     esRef.current?.close();
     esRef.current = null;
   };
@@ -144,14 +153,12 @@ export default function BleRunModal({
   const clearForRun = () => {
     setSteps(initSteps(ORDER));
     setLogs([]);
-
     setMeasuredDbm(undefined);
     setPassTx(undefined);
     setMeasuredHz(undefined);
     setErrorHz(undefined);
     setErrorPpm(undefined);
     setPassFa(undefined);
-
     esRef.current?.close();
     esRef.current = null;
   };
@@ -190,6 +197,7 @@ export default function BleRunModal({
     clearForRun();
     setRunning(true);
 
+    // TX POWER
     if (mode === "txPower") {
       const hex = (powerParam || "").trim();
       const isHex = /^0x[0-9a-fA-F]+$/.test(hex) || /^[0-9a-fA-F]+$/.test(hex) || /^\d+$/.test(hex);
@@ -243,6 +251,7 @@ export default function BleRunModal({
       return;
     }
 
+    // FREQUENCY ACCURACY
     if (mode === "freqAccuracy") {
       if (!(ppmLimit == null || Number.isFinite(Number(ppmLimit)))) {
         pushLog("Invalid PPM limit.");
@@ -295,7 +304,7 @@ export default function BleRunModal({
       return;
     }
 
-    // OBW
+    // OBW (placeholder for future implementation)
     pushLog(`Starting BLE OBW (UI only)… MAC=${macOk}, ch=${channel}, len=${dataLen}, pattern=${pattern}, phy=${phy}`);
     pushLog("OBW runner not wired yet. This is a UI-only placeholder.");
     setRunning(false);
@@ -359,8 +368,9 @@ export default function BleRunModal({
           </div>
         )}
 
+        {/* ⭐ NEW: OBW input form */}
         {mode === "obw" && (
-          <div className="tsq-run-form txpower-grid">
+          <div className="tsq-run-form freqacc-grid">
             <label className="tsq-field"><span>MAC</span>
               <input className={`tsq-input${mac.trim().length < 6 ? " tsq-mac-warn" : ""}`} value={mac} onChange={(e) => setMac(e.target.value)} disabled={running} />
             </label>
@@ -368,13 +378,13 @@ export default function BleRunModal({
               <input className="tsq-input" type="number" value={freqHz} onChange={(e) => setFreqHz(Number(e.target.value))} disabled={running} />
             </label>
             <label className="tsq-field"><span>Data Length</span>
-              <input className="tsq-input" value={dataLen} onChange={(e) => setDataLen(e.target.value)} disabled={running} placeholder="default 1" />
+              <input className="tsq-input" value={dataLen} onChange={(e) => setDataLen(e.target.value)} placeholder="1" disabled={running} />
             </label>
             <label className="tsq-field"><span>Payload Pattern</span>
-              <input className="tsq-input" value={pattern} onChange={(e) => setPattern(e.target.value)} disabled={running} placeholder="default 1" />
+              <input className="tsq-input" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="1" disabled={running} />
             </label>
             <label className="tsq-field"><span>PHY Type</span>
-              <input className="tsq-input" value={phy} onChange={(e) => setPhy(e.target.value)} disabled={running} placeholder="default 2" />
+              <input className="tsq-input" value={phy} onChange={(e) => setPhy(e.target.value)} placeholder="2" disabled={running} />
             </label>
           </div>
         )}
@@ -406,6 +416,8 @@ export default function BleRunModal({
               {errorPpm != null && (<span>Error: <b>{errorPpm.toFixed(2)} ppm</b></span>)}
               {passFa != null && (<span className={`tsq-chip ${passFa ? "pass" : "fail"}`}>{passFa ? "PASS" : "FAIL"}</span>)}
             </>
+          ) : mode === "obw" ? (
+            <span>OBW placeholder - results will appear here when backend is implemented</span>
           ) : (
             <>
               {measuredDbm != null && (<span>Measured: <b>{measuredDbm.toFixed(2)} dBm</b></span>)}

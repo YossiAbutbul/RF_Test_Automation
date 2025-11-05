@@ -1,18 +1,5 @@
 // frontend/src/utils/sequenceIO.ts
-export type Protocol = "LoRa" | "LTE" | "BLE";
-
-export type TestItem = {
-  id: number;
-  type: string;
-  name: string;
-  minimized?: boolean;
-  frequencyText?: string;
-  powerText?: string;
-  powerBle?: string;
-  minValue?: number;
-  maxValue?: number;
-  ppmLimit?: number;
-};
+import type { Protocol, TestItem } from "../types/sequence.types";
 
 export type PersistedSeq = {
   version: 1;

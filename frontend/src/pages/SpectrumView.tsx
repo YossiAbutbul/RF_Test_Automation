@@ -94,7 +94,7 @@ export default function SpectrumView() {
       setConnecting(true);
       try {
         await ping();
-        const res = await connectAnalyzer({ ip, port });
+        const res = await connectAnalyzer(ip, Number(port));
         setConnected(true);
         setIdentity(res?.identity);
         stopPollingRef.current = false;
@@ -302,7 +302,7 @@ export default function SpectrumView() {
   const handleMaxHold = async () => {
     if (!connected) return;
     try {
-      await configureSweep({ traceMode: "MAX_HOLD" });
+      // await configureSweep({ traceMode: "MAX_HOLD" });
     } catch (e) {
       console.error("Max Hold failed:", e);
     }

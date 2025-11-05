@@ -1,16 +1,10 @@
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
-import BleScanner from "@/components/ble/BleScanner";
-import AnalyzerConnection from "@/components/analyzer/AnalyzerConnection";
-import { useAppStore } from "@/state/appStore";
-import { RefreshCw, Trash2, Edit3 } from "lucide-react";
+// frontend/src/pages/Configurations.tsx
+import { PageHeader, Card } from "@/shared/components/ui";
+import { BleScanner } from "@/features/ble-connection/components";
+import { AnalyzerConnection } from "@/features/analyzer-connection/components";
 import "./css/Configurations.css";
 
 export default function Configurations() {
-  const analyzer = useAppStore((s) => s.analyzer);
-  const analyzerConnect = useAppStore((s) => s.actions.analyzerConnect);
-  const analyzerDisconnect = useAppStore((s) => s.actions.analyzerDisconnect);
-
   return (
     <div className="configurations-page">
       <PageHeader

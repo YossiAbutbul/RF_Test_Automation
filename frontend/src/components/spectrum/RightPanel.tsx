@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Card } from '@/components/ui/Card'
+import { Card } from "@/shared/components/ui/Card";
 export default function RightPanel(){
   const [tab,setTab]=useState<'Config'|'Markers'>('Config')
   return (

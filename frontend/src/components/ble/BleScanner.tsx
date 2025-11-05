@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/Card";
+import { Card } from "@/shared/components/ui/Card";
 import { Bluetooth, Edit3, RefreshCcw, X, StopCircle } from "lucide-react";
 import { useAppStore } from "@/state/appStore";
 import type { ProjectFamily, BleDevice } from "@/state/appStore";

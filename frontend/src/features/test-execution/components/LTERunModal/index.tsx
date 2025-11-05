@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Circle, Loader2, XCircle } from "lucide-react";
 import { LTE, AnyEvt } from "@/tests/runners";
-import "../css/RunModal.css";
+import { StepStatus, TxPowerResult, FreqAccuracyResult } from "../../types/test-execution.types";
+import "../RunModal/RunModal.css";
 
 type StepKey =
   | "connectAnalyzer"
@@ -12,7 +13,6 @@ type StepKey =
   | "measure"
   | "cwOff"
   | "close";
-type StepStatus = "idle" | "doing" | "done" | "error";
 
 const LABEL: Record<StepKey, string> = {
   connectAnalyzer: "Connect to spectrum analyzer",

@@ -1,6 +1,6 @@
 import React from 'react'
 import { Wifi, Radio } from 'lucide-react'
-import { Card } from '@/components/ui/Card'
+import { Card } from "@/shared/components/ui/Card";
 
 type Props = {
   title: 'Spectrum Analyzer' | 'DUT (BLE)'

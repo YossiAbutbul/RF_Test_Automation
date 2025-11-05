@@ -1,9 +1,10 @@
-import LoRaRunModal from "./LoRaRunModal";
-import LteRunModal from "./LteRunModal";
-import BleRunModal from "./BleRunModal";
+// frontend/src/features/test-execution/components/RunModal/index.tsx
+import LoRaRunModal from "../LoRaRunModal";
+import LTERunModal from "../LTERunModal";
+import BLERunModal from "../BLERunModal";
+import { Protocol, TestMode } from "../../types/test-execution.types";
 
-export type Protocol = "LoRa" | "LTE" | "BLE";
-export type TestMode = "txPower" | "freqAccuracy" | "obw";
+export type { Protocol, TestMode };
 
 type Props = {
   open: boolean;
@@ -24,33 +25,22 @@ type Props = {
   // Frequency accuracy ppm limit
   defaultPpmLimit?: number;
 
-  // BLE-specific (Tx Power)
+  // BLE-specific
   bleDefaultPowerParamHex?: string;
-
-  // OBW defaults (optional — each modal has sensible internal defaults)
-  // LoRa
-  loraObwBandwidthParam?: string;
-  loraObwDataRateParam?: string;
-
-  // LTE
-  lteObwMcs?: string;       // default "5"
-  lteObwNbIndex?: string;   // default "0"
-  lteObwNumRbAlloc?: string;
-  lteObwPosRbAlloc?: string;
-
-  // BLE
-  bleObwDataLength?: string;     // default "1"
-  bleObwPayloadPattern?: string; // default "1"
-  bleObwPhyType?: string;        // default "2"
+  
+  // ⭐ NEW: BLE OBW parameters
+  obwDataLength?: string;
+  obwPayloadPattern?: string;
+  obwPhyType?: string;
 };
 
 export default function RunModal(props: Props) {
   const { protocol } = props;
 
   if (protocol === "BLE") {
-    // BLE modal supports txPower, freqAccuracy, and obw
+    // ⭐ UPDATED: BLE modal now includes OBW parameters
     return (
-      <BleRunModal
+      <BLERunModal
         open={props.open}
         onClose={props.onClose}
         mode={props.mode ?? "txPower"}
@@ -60,17 +50,16 @@ export default function RunModal(props: Props) {
         minValue={props.minValue ?? null}
         maxValue={props.maxValue ?? null}
         defaultPpmLimit={props.defaultPpmLimit ?? 40}
-        // OBW defaults
-        obwDataLength={props.bleObwDataLength}
-        obwPayloadPattern={props.bleObwPayloadPattern}
-        obwPhyType={props.bleObwPhyType}
+        obwDataLength={props.obwDataLength ?? "1"}
+        obwPayloadPattern={props.obwPayloadPattern ?? "1"}
+        obwPhyType={props.obwPhyType ?? "2"}
       />
     );
   }
 
   if (protocol === "LTE") {
     return (
-      <LteRunModal
+      <LTERunModal
         open={props.open}
         onClose={props.onClose}
         mode={props.mode ?? "txPower"}
@@ -81,11 +70,6 @@ export default function RunModal(props: Props) {
         minValue={props.minValue ?? null}
         maxValue={props.maxValue ?? null}
         defaultPpmLimit={props.defaultPpmLimit ?? 20}
-        // OBW defaults
-        obwMcs={props.lteObwMcs}
-        obwNbIndex={props.lteObwNbIndex}
-        obwNumRbAlloc={props.lteObwNumRbAlloc}
-        obwPosRbAlloc={props.lteObwPosRbAlloc}
       />
     );
   }
@@ -103,9 +87,6 @@ export default function RunModal(props: Props) {
       minValue={props.minValue ?? null}
       maxValue={props.maxValue ?? null}
       defaultPpmLimit={props.defaultPpmLimit ?? 20}
-      // OBW defaults
-      obwBandwidthParam={props.loraObwBandwidthParam}
-      obwDataRateParam={props.loraObwDataRateParam}
     />
   );
 }

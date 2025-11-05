@@ -1,5 +1,5 @@
 // src/components/dashboard/RecentTestsTable.tsx
-import { Card } from '@/components/ui/Card'
+import { Card } from "@/shared/components/ui/Card";
 
 type Row = {
   name: string
