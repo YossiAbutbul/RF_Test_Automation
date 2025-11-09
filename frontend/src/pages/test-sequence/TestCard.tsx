@@ -77,7 +77,7 @@ export default function TestCard({
           >
             <span className="tsq-title-text">
               {t.type}
-              <span className="tsq-test-proto">&nbsp;· {tab}</span>
+              <span className="tsq-test-proto"> &nbsp;· {tab}</span>
 
               {/* Only show if user provided value; no silent default in header */}
               {headerFreqLabel && <span className="tsq-test-proto">&nbsp;{headerFreqLabel}</span>}

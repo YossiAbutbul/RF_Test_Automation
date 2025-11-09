@@ -38,7 +38,6 @@ export default function RunModal(props: Props) {
   const { protocol } = props;
 
   if (protocol === "BLE") {
-    // ⭐ UPDATED: BLE modal now includes OBW parameters
     return (
       <BLERunModal
         open={props.open}
