@@ -98,6 +98,20 @@ class DUTBLE:
         self.device.hwtp_set(cmd.HWTP_DBG_LORA_TEST_CW, payload)  # type: ignore
         time.sleep(0.2)
 
+    def lora_modulated_cw_on(self, *, freq_hz: int, power_dbm: int, bandwidth: int, datarate: int):
+        if not self._connected:
+            self.connect()
+        payload = struct.HWTP_LoraTestModCw_t(
+            modem=enums.hwtp_radiomodem_e.HWTP_LORA,
+            freq=freq_hz,
+            power=power_dbm,
+            bandwidth=bandwidth,
+            datarate=datarate,
+        )
+        time.sleep(1.0)
+        self.device.hwtp_set(cmd.HWTP_DBG_LORA_TEST_MODULATED_CW, payload)  # type: ignore
+        time.sleep(0.2)
+
     def lora_cw_off(self) -> None:
         if not self._connected:
             return

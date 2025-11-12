@@ -258,3 +258,93 @@ async def run_freq_accuracy_stream(
         yield evt("error", error=str(e))
     finally:
         yield evt("done", ok=True)
+
+# ---------- LoRa: Occupied Bandwidth (OBW) ----------
+async def run_obw(
+    *, freq_hz: int, power_dbm: int, mac: str,
+    bandwidth: int, datarate: int,
+    duration_s: float = 10.0,
+) -> Dict[str, Any]:
+    """Non-stream helper; returns measuredHz and pass (always None)."""
+    result = None
+    async for e in run_obw_stream(
+        freq_hz=freq_hz,
+        power_dbm=power_dbm,
+        mac=mac,
+        bandwidth=bandwidth,
+        datarate=datarate,
+        duration_s=duration_s,
+    ):
+        if e.get("type") == "result":
+            result = e
+    if result is None:
+        raise RuntimeError("No result produced by run_obw_stream")
+    return {"ok": True, "measuredHz": result.get("measuredHz"), "pass": result.get("pass_")}
+
+async def run_obw_stream(
+    *, freq_hz: int, power_dbm: int, mac: str,
+    bandwidth: int, datarate: int,
+    duration_s: float = 10.0,
+) -> AsyncGenerator[Dict, None]:
+    """LoRa OBW streaming generator emitting UI steps, result and done events."""
+    def step(key: str, status: str = "start", **extra): return evt("step", key=key, status=status, **extra)
+    spec = None
+    try:
+        yield evt("start", test="obw",
+                  params={"mac": mac, "freq_hz": freq_hz, "power_dbm": power_dbm,
+                          "bandwidth": bandwidth, "datarate": datarate,
+                          "duration_s": duration_s})
+
+        # Analyzer connect
+        yield step("connectAnalyzer", "start")
+        spec = await ensure_analyzer_async()
+        yield step("connectAnalyzer", "done", message="Analyzer connected")
+
+        # Configure analyzer: center freq, span 500 kHz, RBW 3 kHz, VBW 10 kHz
+        yield step("configureAnalyzer", "start")
+        await spec_call(spec.set_center_frequency, freq=freq_hz, units="HZ")
+        await spec_call(spec.set_rbw, rbw=3, units="KHZ")
+        await spec_call(spec.set_vbw, vbw=10, units="KHZ")
+        await spec_call(spec.set_span, span=500, units="KHZ")
+        yield step("configureAnalyzer", "done",
+                   message=f"Analyzer cfg center={freq_hz/1e6:.3f}MHz span=0.500MHz rbw=3kHz vbw=10kHz")
+        await asyncio.sleep(0.5)
+
+        # DUT connect and modulated CW start
+        yield step("connectDut", "start")
+        async with managed_ble(mac) as dut:
+            yield step("connectDut", "done", message=f"BLE connected {mac}")
+            yield step("cwOn", "start",
+                       message=f"LoRa modulated CW on @ {freq_hz/1e6:.3f} MHz, {power_dbm} dBm, bw={bandwidth}, dr={datarate}")
+            await dut_call(dut, "lora_modulated_cw_on",
+                           freq_hz=freq_hz, power_dbm=power_dbm,
+                           bandwidth=bandwidth, datarate=datarate)
+            await asyncio.sleep(0.6)
+            yield step("cwOn", "done")
+
+            # OBW measure
+            yield step("measure", "start", message="Max‑hold accumulate and compute OBW")
+            obw_hz = await spec_call(spec.measure_obw_via_max_hold,
+                                     duration_s=float(duration_s), pct=99.0)
+            measured = float(obw_hz)
+            yield step("measure", "done", measuredHz=measured)
+            yield evt("result", measuredHz=measured, pass_=None)
+
+            # Stop modulation
+            yield step("cwOff", "start", message="LoRa modulated CW off")
+            try:
+                await dut_call(dut, "lora_modulated_cw_off")
+            finally:
+                yield step("cwOff", "done")
+    except asyncio.CancelledError:
+        # On abort, tidy the DUT and analyzer in background
+        if mac:
+            asyncio.create_task(background_abort_ble(mac, protocol="LORA"))
+        if spec:
+            asyncio.create_task(background_tidy_spectrum(spec))
+            asyncio.create_task(spec_call(spec.disconnect, timeout=CLOSE_SPEC_TIMEOUT))
+        raise
+    except Exception as e:
+        yield evt("error", error=str(e))
+    finally:
+        yield evt("done", ok=True)

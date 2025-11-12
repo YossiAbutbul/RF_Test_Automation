@@ -160,43 +160,43 @@ def ble_modulated_cw(device: BLE_Device, channel):
 
 def main():
     # # ==== LoRa OBW Test ====
-    analyzer = SpectrumAnalyzer("172.16.10.1")
-    analyzer.connect()
+    # analyzer = SpectrumAnalyzer("172.16.10.1")
+    # analyzer.connect()
 
-    device = BLE_Device(0x80E1271FD8B8)
-    device.Connect()
-    analyzer.set_rbw(rbw=3, units="KHZ")
-    analyzer.set_vbw(vbw=10, units="KHZ")
-    analyzer.set_span(span=500, units="KHZ")
-    lora_modulated_cw(device, freq=918500000, power=14, bw=0, dr=7)
+    # device = BLE_Device(0x80E1271FD8B8)
+    # device.Connect()
+    # analyzer.set_rbw(rbw=3, units="KHZ")
+    # analyzer.set_vbw(vbw=10, units="KHZ")
+    # analyzer.set_span(span=500, units="KHZ")
+    # lora_modulated_cw(device, freq=918500000, power=14, bw=0, dr=7)
 
-    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
-    print(f"OBW (MaxHold 10s) = {bw_hz/1e3:.2f} kHz")
-    lora_test_off(device)
+    # bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
+    # print(f"OBW (MaxHold 10s) = {bw_hz/1e3:.2f} kHz")
+    # lora_test_off(device)
 
-    device.Disconnect()
-    analyzer.disconnect()
+    # device.Disconnect()
+    # analyzer.disconnect()
 
     # # ==== LTE OBW Test ====
-    analyzer = SpectrumAnalyzer("172.16.10.1")
-    analyzer.connect()
+    # analyzer = SpectrumAnalyzer("172.16.10.1")
+    # analyzer.connect()
 
-    device = BLE_Device(0x80E1271FD8B8)
-    device.Connect()
-    analyzer.set_rbw(rbw=3, units="KHZ")
-    analyzer.set_vbw(vbw=10, units="KHZ")
-    analyzer.set_span(span=5, units="MHZ")
-    analyzer.set_center_frequency(freq=707.5, units="MHZ")
-    cat_m_modem_on(device)
-    lte_modulated_cw(device=device, earfcn=23095, power=2300)
+    # device = BLE_Device(0x80E1271FD8B8)
+    # device.Connect()
+    # analyzer.set_rbw(rbw=3, units="KHZ")
+    # analyzer.set_vbw(vbw=10, units="KHZ")
+    # analyzer.set_span(span=5, units="MHZ")
+    # analyzer.set_center_frequency(freq=707.5, units="MHZ")
+    # cat_m_modem_on(device)
+    # lte_modulated_cw(device=device, earfcn=23095, power=2300)
     
-    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
-    print(f"OBW (MaxHold 10s) = {bw_hz/1e3:.2f} kHz")
-    cat_m_abort_test(device)
-    cat_m_modem_off(device)
+    # bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
+    # print(f"OBW (MaxHold 10s) = {bw_hz/1e3:.2f} kHz")
+    # cat_m_abort_test(device)
+    # cat_m_modem_off(device)
 
-    device.Disconnect()
-    analyzer.disconnect()
+    # device.Disconnect()
+    # analyzer.disconnect()
 
     # ==== BLE OBW Test ====
     analyzer = SpectrumAnalyzer("172.16.10.1")
@@ -207,9 +207,9 @@ def main():
     analyzer.set_rbw(rbw=3, units="KHZ")
     analyzer.set_vbw(vbw=10, units="KHZ")
     analyzer.set_span(span=5, units="MHZ")
-    analyzer.set_center_frequency(freq=2404, units="MHZ")
+    analyzer.set_center_frequency(freq=2402, units="MHZ")
 
-    ble_modulated_cw(device=device, channel=1)
+    ble_modulated_cw(device=device, channel=0)
     
     bw_hz = analyzer.measure_obw_via_max_hold(duration_s=15.0, pct=99.0)
     print(f"OBW (MaxHold 15s) = {bw_hz/1e3:.2f} kHz")
