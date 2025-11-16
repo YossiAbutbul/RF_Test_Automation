@@ -8,6 +8,10 @@ from typing import Optional
 import re
 import math
 
+from contextlib import contextmanager
+
+
+
 FLOAT_RE = re.compile(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
 
 def _only_number(s: str) -> float:
@@ -298,68 +302,84 @@ class SpectrumAnalyzer:
     def clear_write(self):
         self.send_and_wait("DISP:TRAC1:MODE WRIT")
 
-    def measure_obw_via_max_hold(self, duration_s: float, pct: float = 99.0) -> float:
+    def measure_obw_via_max_hold(self, duration_s: float, pct: float = 99.0, guard_s: float = 15.0) -> float:
         """
         Measure Occupied Bandwidth (OBW) using Max-Hold without changing sweep method.
+
         Flow:
-        1) self.max_hold()
-        2) sleep(duration_s)  <-- analyzer keeps sweeping as currently configured
-        3) fetch trace + compute OBW (smallest contiguous band around peak with pct% power)
-        4) self.clear_write()
+        1) self.max_hold()               -> DISP:TRAC1:MODE MAXHold
+        2) sleep(duration_s)             -> analyzer keeps sweeping as currently configured
+        3) fetch trace + compute OBW     -> smallest contiguous band around peak with pct% power
+        4) self.clear_write()            -> DISP:TRAC1:MODE WRIT
+
+        Args:
+        duration_s: Max-hold accumulation time (seconds).
+        pct:        Occupied bandwidth percentage (e.g., 99.0).
+        guard_s:    Extra time budget for instrument processing/transfer.
+
         Returns:
         OBW in Hz (float)
         """
+        # Ensure we're actually connected before doing anything
+        self._ensure_connected()
+
+        import re, time  # in case not imported at top
+
         def _first_float(s: str) -> float:
             m = re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", s or "")
             if not m:
                 raise ValueError(f"parse error: {s!r}")
             return float(m.group(0))
 
-        # ---- 1) Switch to Max-Hold (no sweep changes) ----
+        # 1) Switch to Max-Hold (quick command; default send_and_wait timeout is fine)
         try:
             self.max_hold()  # uses: DISP:TRAC1:MODE MAXHold
         except Exception as e:
             raise RuntimeError(f"Failed to set Max Hold: {e}")
 
         try:
-            # ---- 2) Accumulate Max-Hold for requested time ----
+            # 2) Accumulate Max-Hold for requested time
             time.sleep(max(0.0, float(duration_s)))
 
-            # ---- 3) Read trace and compute OBW ----
-            # get_raw_data() in your class already ensures ASCII and normalizes CSV
-            raw_csv = self.get_raw_data()
-            if not raw_csv:
-                raise RuntimeError("Empty trace from analyzer")
+            # Use a temporary, extended socket timeout for all network-heavy work below:
+            # (trace transfer + a couple of SCPI queries). This avoids the default short
+            # socket/OPC timeouts killing long OBW flows.
+            with self.temp_timeout(float(duration_s) + float(guard_s)):
+                # 3a) Read trace (CSV) and parse dBm values
+                raw_csv = self.get_raw_data()
+                if not raw_csv:
+                    raise RuntimeError("Empty trace from analyzer")
 
-            # parse dBm values
-            vals_dbm = []
-            for tok in raw_csv.split(","):
-                tok = tok.strip()
-                if not tok:
-                    continue
+                vals_dbm = []
+                for tok in raw_csv.split(","):
+                    tok = tok.strip()
+                    if not tok:
+                        continue
+                    try:
+                        vals_dbm.append(float(tok))
+                    except ValueError:
+                        # ignore junk tokens defensively
+                        pass
+
+                n = len(vals_dbm)
+                if n < 10:
+                    raise RuntimeError(f"Trace too short ({n} points)")
+
+                # 3b) Query span and sweep points (best effort; do NOT alter sweep)
                 try:
-                    vals_dbm.append(float(tok))
-                except ValueError:
-                    pass
+                    span_hz = int(round(_first_float(self.query("FREQ:SPAN?"))))
+                except Exception:
+                    raise RuntimeError("Cannot determine SPAN (FREQ:SPAN?)")
 
-            n = len(vals_dbm)
-            if n < 10:
-                raise RuntimeError(f"Trace too short ({n} points)")
-
-            # span (Hz) and sweep points (best effort; do NOT alter sweep)
-            try:
-                span_hz = int(round(_first_float(self.query("FREQ:SPAN?"))))
-            except Exception:
-                raise RuntimeError("Cannot determine SPAN (FREQ:SPAN?)")
-
-            try:
-                swe_points = int(round(_first_float(self.query("SWE:POIN?"))))
-                if swe_points < 2 or abs(swe_points - n) > n // 2:
+                try:
+                    swe_points = int(round(_first_float(self.query("SWE:POIN?"))))
+                    if swe_points < 2 or abs(swe_points - n) > n // 2:
+                        # if mismatch, fall back to actual parsed points
+                        swe_points = n
+                except Exception:
                     swe_points = n
-            except Exception:
-                swe_points = n
 
-            # OBW algorithm: smallest contiguous band around peak containing pct% total power
+            # 3c) Compute OBW (smallest contiguous band around peak with pct% of total power)
             lin = [10.0 ** (v / 10.0) for v in vals_dbm]  # mW
             total = sum(lin)
             if total <= 0.0:
@@ -392,11 +412,31 @@ class SpectrumAnalyzer:
             return obw_hz
 
         finally:
-            # ---- 4) Always restore to Clear/Write ----
+            # 4) Always restore to Clear/Write
             try:
                 self.clear_write()  # uses: DISP:TRAC1:MODE WRIT
             except Exception:
-                pass    
+                pass
+    
+    
+    # inside class SpectrumAnalyzer
+    def set_socket_timeout(self, seconds: float) -> None:
+        """Adjust the socket timeout for long operations."""
+        self._ensure_connected()
+        self.timeout = float(seconds)
+        self.sock.settimeout(self.timeout)
+
+    @contextmanager
+    def temp_timeout(self, seconds: float):
+        """Temporarily bump the socket timeout for long queries, then restore."""
+        self._ensure_connected()
+        prev = self.timeout
+        try:
+            self.set_socket_timeout(seconds)
+            yield
+        finally:
+            self.set_socket_timeout(prev)
+
 
 if __name__ == "__main__":
     analyzer = SpectrumAnalyzer("172.16.10.1")

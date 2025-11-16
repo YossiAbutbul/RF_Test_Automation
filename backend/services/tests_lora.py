@@ -1,6 +1,6 @@
 # backend/services/tests_lora.py
 from __future__ import annotations
-
+import time
 import asyncio
 from typing import AsyncGenerator, Dict, Optional, Any, List
 
@@ -260,10 +260,42 @@ async def run_freq_accuracy_stream(
         yield evt("done", ok=True)
 
 # ---------- LoRa: Occupied Bandwidth (OBW) ----------
+
+def _compute_obw_from_trace(dbm_vals: list[float], span_hz: int, swe_points: int, pct: float = 99.0) -> float:
+    n = len(dbm_vals)
+    if n < 10:
+        raise RuntimeError(f"Trace too short ({n} points)")
+    # linear power (mW)
+    lin = [10.0 ** (v / 10.0) for v in dbm_vals]
+    total = sum(lin)
+    if total <= 0.0:
+        raise RuntimeError("Non-positive total power in trace")
+    peak = max(range(n), key=lambda i: lin[i])
+    target = total * (pct / 100.0)
+    left = right = peak
+    acc = lin[peak]
+    while acc < target and (left > 0 or right < n - 1):
+        lp = lin[left - 1] if left > 0 else -1.0
+        rp = lin[right + 1] if right < n - 1 else -1.0
+        if rp > lp and right < n - 1:
+            right += 1
+            acc += lin[right]
+        elif left > 0:
+            left -= 1
+            acc += lin[left]
+        else:
+            break
+    bin_hz = float(span_hz) / max(1, (swe_points - 1))
+    width_bins = max(1, right - left)
+    obw_hz = width_bins * bin_hz
+    if not (0.0 < obw_hz <= span_hz * 1.05):
+        raise ValueError(f"Computed OBW out of range: {obw_hz} Hz (span={span_hz} Hz)")
+    return obw_hz
+
 async def run_obw(
     *, freq_hz: int, power_dbm: int, mac: str,
     bandwidth: int, datarate: int,
-    duration_s: float = 10.0,
+    duration_s: float = 2.0,
 ) -> Dict[str, Any]:
     """Non-stream helper; returns measuredHz and pass (always None)."""
     result = None
@@ -284,67 +316,192 @@ async def run_obw(
 async def run_obw_stream(
     *, freq_hz: int, power_dbm: int, mac: str,
     bandwidth: int, datarate: int,
-    duration_s: float = 10.0,
+    duration_s: float = 2.0,
 ) -> AsyncGenerator[Dict, None]:
-    """LoRa OBW streaming generator emitting UI steps, result and done events."""
-    def step(key: str, status: str = "start", **extra): return evt("step", key=key, status=status, **extra)
-    spec = None
-    try:
-        yield evt("start", test="obw",
-                  params={"mac": mac, "freq_hz": freq_hz, "power_dbm": power_dbm,
-                          "bandwidth": bandwidth, "datarate": datarate,
-                          "duration_s": duration_s})
+    """
+    LoRa Occupied Bandwidth (OBW) streaming generator.
+    Steps: connectAnalyzer -> configureAnalyzer -> connectDut -> cwOn -> measure -> cwOff -> done
+    """
+    def step(key: str, status: str = "start", **extra) -> Dict[str, Any]:
+        return evt("step", key=key, status=status, **extra)
 
-        # Analyzer connect
+    spec = None
+    dut = None  # will capture the managed_ble instance for cleanup
+    cfg    = get_test_config("lora_obw")
+    setup  = (cfg.get("analyzer_setup") or {}) if isinstance(cfg, dict) else {}
+    settle = (cfg.get("settle") or {}) if isinstance(cfg, dict) else {}
+    ref_off = get_global_analyzer_ref_offset_db()
+
+    try:
+        # announce test start
+        yield evt(
+            "start",
+            test="obw",
+            params={
+                "mac": mac,
+                "freq_hz": freq_hz,
+                "power_dbm": power_dbm,
+                "bandwidth": bandwidth,
+                "datarate": datarate,
+                "duration_s": duration_s,
+            },
+        )
+
+        # ---- Analyzer connect ----
         yield step("connectAnalyzer", "start")
         spec = await ensure_analyzer_async()
         yield step("connectAnalyzer", "done", message="Analyzer connected")
 
-        # Configure analyzer: center freq, span 500 kHz, RBW 3 kHz, VBW 10 kHz
+        # ---- Analyzer configure ----
         yield step("configureAnalyzer", "start")
-        await spec_call(spec.set_center_frequency, freq=freq_hz, units="HZ")
-        await spec_call(spec.set_rbw, rbw=3, units="KHZ")
-        await spec_call(spec.set_vbw, vbw=10, units="KHZ")
-        await spec_call(spec.set_span, span=500, units="KHZ")
-        yield step("configureAnalyzer", "done",
-                   message=f"Analyzer cfg center={freq_hz/1e6:.3f}MHz span=0.500MHz rbw=3kHz vbw=10kHz")
-        await asyncio.sleep(0.5)
+        eff = await apply_analyzer_setup(
+            spec=spec,
+            center_hz=int(freq_hz),
+            setup=setup,
+            analyzer_ref_offset_db=ref_off,
+        )
+        yield step(
+            "configureAnalyzer",
+            "done",
+            message=(
+                f"Analyzer cfg center={eff.get('center_hz', freq_hz)/1e6:.3f}MHz "
+                f"span={eff.get('span_hz', 500_000)/1e6:.3f}MHz "
+                f"rbw={eff.get('rbw_hz', 3000)/1e3:.0f}kHz "
+                f"vbw={eff.get('vbw_hz', 10000)/1e3:.0f}kHz "
+                f"ref_off={eff.get('analyzer_ref_offset_db', ref_off)}dB"
+            ),
+        )
+        # settle after center frequency (from YAML, fallback 0.25s)
+        await asyncio.sleep(float(settle.get("after_center_s", 0.25)))
 
-        # DUT connect and modulated CW start
+        # ---- DUT connect and modulated CW ----
         yield step("connectDut", "start")
-        async with managed_ble(mac) as dut:
+        async with managed_ble(mac) as _dut:
+            dut = _dut  # capture for cleanup
             yield step("connectDut", "done", message=f"BLE connected {mac}")
-            yield step("cwOn", "start",
-                       message=f"LoRa modulated CW on @ {freq_hz/1e6:.3f} MHz, {power_dbm} dBm, bw={bandwidth}, dr={datarate}")
-            await dut_call(dut, "lora_modulated_cw_on",
-                           freq_hz=freq_hz, power_dbm=power_dbm,
-                           bandwidth=bandwidth, datarate=datarate)
-            await asyncio.sleep(0.6)
+
+            yield step(
+                "cwOn",
+                "start",
+                message=(f"LoRa modulated CW on @ {freq_hz/1e6:.3f} MHz, {power_dbm} dBm, bw={bandwidth}, dr={datarate}"),
+            )
+            await dut_call(
+                dut,
+                "lora_modulated_cw_on",
+                freq_hz=freq_hz,
+                power_dbm=power_dbm,
+                bandwidth=bandwidth,
+                datarate=datarate,
+            )
+            await asyncio.sleep(float(settle.get("after_lora_cw_on_s", 0.6)))
             yield step("cwOn", "done")
 
-            # OBW measure
-            yield step("measure", "start", message="Max‑hold accumulate and compute OBW")
-            obw_hz = await spec_call(spec.measure_obw_via_max_hold,
-                                     duration_s=float(duration_s), pct=99.0)
-            measured = float(obw_hz)
-            yield step("measure", "done", measuredHz=measured)
-            yield evt("result", measuredHz=measured, pass_=None)
+            # ---- Measure OBW ----
+            yield step("measure", "start", message="Max-hold accumulate and compute OBW")
 
-            # Stop modulation
+            try:
+                # 1) Switch analyzer to MaxHold
+                await spec_call(spec.max_hold)
+                yield evt("log", message="Trace mode -> MAXHold")
+
+                # 2) Accumulate with small keep-alives to avoid idle timeouts
+                start_t = asyncio.get_event_loop().time()
+                while asyncio.get_event_loop().time() - start_t < float(duration_s):
+                    await asyncio.sleep(0.8)
+                    # yield evt("log", message="Accumulating…")
+
+                # 3) Fetch trace CSV
+                raw_csv = await spec_call(spec.get_raw_data)
+                if not raw_csv:
+                    raise RuntimeError("Empty trace from analyzer")
+
+                # 4) Parse trace into dBm floats (robust to junk tokens)
+                vals_dbm: list[float] = []
+                for tok in raw_csv.split(","):
+                    tok = tok.strip()
+                    if not tok:
+                        continue
+                    try:
+                        vals_dbm.append(float(tok))
+                    except ValueError:
+                        # keep parsing, skip junk
+                        pass
+                if len(vals_dbm) < 10:
+                    raise RuntimeError(f"Trace too short ({len(vals_dbm)} points)")
+
+                # 5) Ask analyzer for span and sweep points
+                try:
+                    span_str = await spec_call(spec.query, "FREQ:SPAN?")
+                    span_hz = int(round(float(span_str)))
+                except Exception as e:
+                    raise RuntimeError(f"Cannot determine SPAN (FREQ:SPAN?): {e}")
+
+                try:
+                    swe_str = await spec_call(spec.query, "SWE:POIN?")
+                    swe_points = int(round(float(swe_str)))
+                    if swe_points < 2 or abs(swe_points - len(vals_dbm)) > len(vals_dbm) // 2:
+                        swe_points = len(vals_dbm)
+                except Exception:
+                    swe_points = len(vals_dbm)
+
+                # 6) Compute OBW locally
+                obw_hz = _compute_obw_from_trace(vals_dbm, span_hz, swe_points, pct=99.0)
+
+                measured = float(obw_hz)
+                yield step("measure", "done", measuredHz=measured)
+                yield evt("result", measuredHz=measured, pass_=None)
+
+            except Exception as e:
+                # Make the error very explicit
+                yield evt("error", error=f"OBW inline failed: {type(e).__name__}: {e}")
+                return
+
+
+            # ---- Modulated CW off ----
             yield step("cwOff", "start", message="LoRa modulated CW off")
             try:
-                await dut_call(dut, "lora_modulated_cw_off")
+                await dut_call(dut, "lora_cw_off")  # your cw-off path
             finally:
                 yield step("cwOff", "done")
+
     except asyncio.CancelledError:
-        # On abort, tidy the DUT and analyzer in background
+        # If stream cancelled, perform background abort/cleanup
         if mac:
             asyncio.create_task(background_abort_ble(mac, protocol="LORA"))
         if spec:
+            # clear write and disconnect analyzer gracefully
+            try:
+                await spec_call(spec.clear_write)
+            except Exception:
+                pass
             asyncio.create_task(background_tidy_spectrum(spec))
-            asyncio.create_task(spec_call(spec.disconnect, timeout=CLOSE_SPEC_TIMEOUT))
+            try:
+                await spec_call(spec.disconnect, timeout=CLOSE_SPEC_TIMEOUT)
+            except Exception:
+                pass
         raise
     except Exception as e:
         yield evt("error", error=str(e))
     finally:
+        # ---- Global cleanup (always) ----
+        # 1) Analyzer -> WRIT (best-effort)
+        if spec:
+            try:
+                await spec_call(spec.clear_write)  # DISP:TRAC1:MODE WRIT
+            except Exception:
+                pass
+        # 2) CW off (best-effort) — if DUT still around
+        if dut:
+            try:
+                await dut_call(dut, "lora_cw_off")
+            except Exception:
+                if mac:
+                    asyncio.create_task(background_abort_ble(mac, protocol="LORA"))
+        # 3) Analyzer disconnect (best-effort)
+        if spec:
+            try:
+                await spec_call(spec.disconnect, timeout=CLOSE_SPEC_TIMEOUT)
+            except Exception:
+                pass
         yield evt("done", ok=True)
+

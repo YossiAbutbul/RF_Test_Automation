@@ -49,6 +49,17 @@ tests:
         rbw_hz: 1000
         vbw_hz: 3000
         delay_s: 0.250
+  # ===== LoRa: OBW =====
+  lora_obw:
+    analyzer_setup:
+      span_hz: 500000        # 500 kHz span
+      rbw_hz: 3000           # 3 kHz RBW
+      vbw_hz: 10000          # 10 kHz VBW
+      ref_level_dbm: 20.0    # or whatever works best for you
+      use_peak_detector: true
+    settle:
+      after_center_s: 0.25
+      after_lora_cw_on_s: 0.60
 
   # ===== LTE: Tx Power =====
   lte_defaults:

@@ -31,6 +31,8 @@ type Props = {
   // LoRa
   loraObwBandwidthParam?: string;
   loraObwDataRateParam?: string;
+  loraObwMaxKhz?: number;
+
 
   // LTE
   lteObwMcs?: string;       // default "5"
@@ -106,6 +108,8 @@ export default function RunModal(props: Props) {
       // OBW defaults
       obwBandwidthParam={props.loraObwBandwidthParam}
       obwDataRateParam={props.loraObwDataRateParam}
+      obwMaxKhz={props.loraObwMaxKhz}
+
     />
   );
 }

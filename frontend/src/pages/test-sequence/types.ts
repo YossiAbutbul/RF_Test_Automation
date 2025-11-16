@@ -17,6 +17,7 @@ export type TestItem = {
   // -------- OBW (LoRa)
   bandwidthParam?: string;
   dataRateParam?: string;
+  maxObwKhz?: number | null;
 
   // -------- OBW (LTE)
   mcs?: string;

@@ -43,6 +43,7 @@ type RunDefaults = {
   // OBW (LoRa)
   loraObwBandwidthParam?: string;
   loraObwDataRateParam?: string;
+  loraObwMaxKhz?: number;
 
   // OBW (LTE)
   lteObwMcs?: string;
@@ -401,7 +402,11 @@ export default function TestSequence() {
 
     const obwExtras =
       isOBW && tab === "LoRa"
-        ? { loraObwBandwidthParam: t.bandwidthParam ?? "", loraObwDataRateParam: t.dataRateParam ?? "" }
+        ? {
+            loraObwBandwidthParam: t.bandwidthParam ?? "",
+            loraObwDataRateParam: t.dataRateParam ?? "",
+            loraObwMaxKhz: t.maxObwKhz ?? undefined,
+          }
         : isOBW && tab === "LTE"
         ? {
             lteObwMcs: t.mcs ?? "5",
@@ -570,6 +575,7 @@ export default function TestSequence() {
                 defaultPowerDbm: runDefaults.powerDbm ?? 14, // 0 stays 0; only undefined falls back
                 loraObwBandwidthParam: runDefaults.loraObwBandwidthParam,
                 loraObwDataRateParam: runDefaults.loraObwDataRateParam,
+                loraObwMaxKhz: runDefaults.loraObwMaxKhz,
                 lteObwMcs: runDefaults.lteObwMcs,
                 lteObwNbIndex: runDefaults.lteObwNbIndex,
                 lteObwNumRbAlloc: runDefaults.lteObwNumRbAlloc,

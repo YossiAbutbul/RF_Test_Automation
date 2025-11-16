@@ -168,6 +168,20 @@ export default function TestCard({
                       onChange={(e) => onUpdate({ dataRateParam: e.target.value })}
                     />
                   </div>
+                  <label className="tsq-field">
+                    <span>Max OBW [kHz] (optional)</span>
+                    <input
+                      className="tsq-input"
+                      type="number"
+                      placeholder="—"
+                      value={t.maxObwKhz ?? "130"}
+                      onChange={(e) =>
+                        onUpdate({
+                          maxObwKhz: e.currentTarget.value === "" ? null : Number(e.currentTarget.value),
+                        })
+                      }
+                    />
+                  </label>
                 </div>
               )}
 

@@ -13,6 +13,7 @@ from services.tests_runner import (
     # LoRa
     run_tx_power, run_tx_power_stream,
     run_freq_accuracy, run_freq_accuracy_stream,
+    
     # LTE
     run_lte_tx_power, run_lte_tx_power_stream,
     run_lte_frequency_accuracy, run_lte_frequency_accuracy_stream,
@@ -20,6 +21,7 @@ from services.tests_runner import (
 
 # NEW: BLE Tx Power stream
 from services.tests_ble import run_ble_tx_power_stream
+from services.tests_lora import run_obw, run_obw_stream
 
 router = APIRouter(prefix="/tests", tags=["tests"])
 
@@ -241,6 +243,94 @@ async def api_frequency_accuracy_stream_post(request: Request):
         power_dbm=int(pwr),
         mac=mac,
         ppm_limit=_first(body.get("ppm_limit"), body.get("ppmLimit")),
+    )
+    return _sse(gen, request)
+
+# =============================
+# LoRa — Occupied Bandwidth (OBW)
+# =============================
+@router.post("/obw")
+async def api_obw(body: Dict[str, Any]):
+    """Run LoRa OBW test and return the final result (no streaming)."""
+    try:
+        freq_hz   = int(_first(body.get("freq_hz"), body.get("freqHz")))
+        power_dbm = int(_first(body.get("power_dbm"), body.get("powerDbm")))
+        bandwidth = int(_first(body.get("bandwidth"), body.get("bw")))
+        datarate  = int(_first(body.get("datarate"), body.get("dr")))
+        mac = str(body.get("mac", "")).strip()
+        if not mac:
+            raise ValueError("Missing 'mac'")
+        duration_s = body.get("duration_s") or body.get("durationS") or 10.0
+        return await run_obw(
+            freq_hz=freq_hz,
+            power_dbm=power_dbm,
+            mac=mac,
+            bandwidth=bandwidth,
+            datarate=datarate,
+            duration_s=float(duration_s),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@router.get("/obw/stream")
+async def api_obw_stream_get(
+    request: Request,
+    freq_hz: Optional[int] = Query(None),
+    freqHz: Optional[int] = Query(None),
+    power_dbm: Optional[int] = Query(None),
+    powerDbm: Optional[int] = Query(None),
+    bandwidth: int = Query(...),
+    bw: Optional[int] = Query(None),
+    datarate: int = Query(...),
+    dr: Optional[int] = Query(None),
+    mac: str = Query(""),
+    duration_s: Optional[float] = Query(10.0),
+):
+    mac = mac.strip()
+    if not mac:
+        raise HTTPException(status_code=422, detail="Missing 'mac'")
+    freq = _first(freq_hz, freqHz)
+    pwr  = _first(power_dbm, powerDbm)
+    bw_val = _first(bandwidth, bw)
+    dr_val = _first(datarate, dr)
+    if freq is None or pwr is None or bw_val is None or dr_val is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Missing 'freq_hz','power_dbm','bandwidth' or 'datarate'",
+        )
+    gen = run_obw_stream(
+        freq_hz=int(freq),
+        power_dbm=int(pwr),
+        mac=mac,
+        bandwidth=int(bw_val),
+        datarate=int(dr_val),
+        duration_s=float(duration_s) if duration_s is not None else 10.0,
+    )
+    return _sse(gen, request)
+
+@router.post("/obw/stream")
+async def api_obw_stream_post(request: Request):
+    body = await _json_body(request)
+    mac = str(body.get("mac", "")).strip()
+    if not mac:
+        raise HTTPException(status_code=422, detail="Missing 'mac'")
+    freq = _first(body.get("freq_hz"), body.get("freqHz"))
+    pwr  = _first(body.get("power_dbm"), body.get("powerDbm"))
+    bw_val = _first(body.get("bandwidth"), body.get("bw"))
+    dr_val = _first(body.get("datarate"), body.get("dr"))
+    if freq is None or pwr is None or bw_val is None or dr_val is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Missing 'freq_hz','power_dbm','bandwidth' or 'datarate'",
+        )
+    duration_s = body.get("duration_s") or body.get("durationS") or 10.0
+    gen = run_obw_stream(
+        freq_hz=int(freq),
+        power_dbm=int(pwr),
+        mac=mac,
+        bandwidth=int(bw_val),
+        datarate=int(dr_val),
+        duration_s=float(duration_s),
     )
     return _sse(gen, request)
 
