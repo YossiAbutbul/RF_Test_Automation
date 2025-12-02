@@ -32,26 +32,22 @@ def parse_mac_to_hex(mac_str: str) -> int:
     return int(mac_clean, 16)
 
 
-def lora_cw(device: BLE_Device, spectrum: SpectrumAnalyzer, frequency, power, ref_offset):
+def lora_cw(device: BLE_Device, frequency, power):
     commands = cmd.HWTP_DBG_LORA_TEST_CW
     payload = struct.HWTP_LoraTestCw_t(
         freq=frequency,
         power=power,
         paMode=enums.hwtp_loratestpamode_e.HWTP_LORA_TEST_PA_AUTO)
     time.sleep(1)
-    try:
-        device.hwtp_set(commands,payload)
-        # time.sleep(2)
-        spectrum.set_center_frequency(frequency)
-        spectrum.peak_search()
-        peak = float(spectrum.get_marker_power())
-        print(f"CW power measured at {frequency/float(1000000)} MHz: {peak + float(ref_offset)}dBm")
-        device.hwtp_get(command=cmd.HWTP_DBG_LORA_TEST_STOP)
-    finally:
-        device.Disconnect()
-        spectrum.disconnect()
+    device.hwtp_set(commands,payload)
+    
 
-def cat_m_modem_on(device: BLE_Device,):
+def lora_cw_off(device: BLE_Device):
+    command = cmd.HWTP_DBG_LORA_TEST_STOP
+    device.hwtp_get(command=command)
+    
+
+def lte_modem_on(device: BLE_Device,):
     commands = cmd.HWTP_AT_MODEM_ON
     # payload = struct.HWTP_CATM_mode_t
     s_time = time.time()
@@ -61,7 +57,7 @@ def cat_m_modem_on(device: BLE_Device,):
         print(f"Exception occurred: {e}")
     e_time = time.time()
 
-def cat_m_cw_on(device: BLE_Device, earfcn, power):    
+def lte_cw_on(device: BLE_Device, earfcn, power):    
     commands = cmd.HWTP_MODEM_TEST_RF_CW
     payload = struct.HWTP_tstrf_cw_s(
         tstrf_cmd=enums.hwtp_at_tstrf_cmd_e.HWTP_START_TX_TEST,
@@ -72,7 +68,7 @@ def cat_m_cw_on(device: BLE_Device, earfcn, power):
     )
     device.hwtp_set(commands,payload)
 
-def cat_m_abort_test(device: BLE_Device):
+def lte_abort_test(device: BLE_Device):
     commands = cmd.HWTP_MODEM_TEST_RF_CW
     payload = struct.HWTP_tstrf_cw_s(
         tstrf_cmd=enums.hwtp_at_tstrf_cmd_e.HWTP_ABORT_TEST,
@@ -83,7 +79,7 @@ def cat_m_abort_test(device: BLE_Device):
         )
     device.hwtp_set(commands,payload)
 
-def cat_m_modem_off(device: BLE_Device):
+def lte_modem_off(device: BLE_Device):
     commands = cmd.HWTP_AT_MODEM_OFF
     try:
         device.hwtp_get(commands)
@@ -94,7 +90,7 @@ def ble_cw(device: BLE_Device, channel):
     commands = cmd.HWTP_EX_BLE_TEST_TONE_START
     payload = struct.HWTP_BleToneParams_t(
         channel=int(channel),
-        duration=20,
+        duration=10,
         offset=0,
     )
     device.hwtp_set(commands, payload)
@@ -159,7 +155,7 @@ def ble_modulated_cw(device: BLE_Device, channel):
 
 
 def main():
-    # # ==== LoRa OBW Test ====
+    # ==== LoRa Tx Power Test ====
     analyzer = SpectrumAnalyzer("172.16.10.1")
     analyzer.connect()
 
@@ -168,100 +164,128 @@ def main():
     analyzer.set_rbw(rbw=3, units="KHZ")
     analyzer.set_vbw(vbw=10, units="KHZ")
     analyzer.set_span(span=500, units="KHZ")
-    lora_modulated_cw(device, freq=918500000, power=14, bw=0, dr=7)
+    analyzer.set_center_frequency(freq=907.3, units="MHZ")
 
-    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
-    print(f"OBW (MaxHold 10s) = {bw_hz/1e3:.2f} kHz")
+    lora_cw(device=device, frequency=907300000, power=14)
+    time.sleep(1)
+    analyzer.peak_search()
+    peak = float(analyzer.get_marker_power())
+    print(f"Tx power @ LoRa is: {peak}dBm")
+    time.sleep(0.5)
+
     lora_test_off(device)
 
     device.Disconnect()
     analyzer.disconnect()
 
-    # # ==== LTE OBW Test ====
-    # analyzer = SpectrumAnalyzer("172.16.10.1")
-    # analyzer.connect()
+    # ==== LoRa OBW Test ====
+    analyzer = SpectrumAnalyzer("172.16.10.1")
+    analyzer.connect()
 
-    # device = BLE_Device(0x80E1271FD8B8)
-    # device.Connect()
-    # analyzer.set_rbw(rbw=3, units="KHZ")
-    # analyzer.set_vbw(vbw=10, units="KHZ")
-    # analyzer.set_span(span=5, units="MHZ")
-    # analyzer.set_center_frequency(freq=707.5, units="MHZ")
-    # cat_m_modem_on(device)
-    # lte_modulated_cw(device=device, earfcn=23095, power=2300)
+    device = BLE_Device(0x80E1271FD8B8)
+    device.Connect()
+    analyzer.set_rbw(rbw=3, units="KHZ")
+    analyzer.set_vbw(vbw=10, units="KHZ")
+    analyzer.set_span(span=500, units="KHZ")
+    analyzer.set_center_frequency(freq=918.5, units="MHZ")
+
+    lora_modulated_cw(device, freq=918500000, power=14, bw=0, dr=7)
+
+    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
+    print(f"OBW @LoRa = {bw_hz/1e3:.2f} kHz")
+    lora_test_off(device)
+
+    device.Disconnect()
+    analyzer.disconnect()
     
-    # bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
-    # print(f"OBW (MaxHold 10s) = {bw_hz/1e3:.2f} kHz")
-    # cat_m_abort_test(device)
-    # cat_m_modem_off(device)
+    # ==== LTE Tx Power Test ====
+    analyzer = SpectrumAnalyzer("172.16.10.1")
+    analyzer.connect()
 
-    # device.Disconnect()
-    # analyzer.disconnect()
+    device = BLE_Device(0x80E1271FD8B8)
+    device.Connect()
+    analyzer.set_rbw(rbw=3, units="KHZ")
+    analyzer.set_vbw(vbw=10, units="KHZ")
+    analyzer.set_span(span=5, units="MHZ")
+    analyzer.set_center_frequency(freq=707.5, units="MHZ")
+    lte_modem_on(device)
+    lte_cw_on(device=device, earfcn=23095, power=2300)
+    time.sleep(1)
+
+    analyzer.peak_search()
+    peak = float(analyzer.get_marker_power())
+    print(f"Tx Power @ LTE is: {peak}dBm")
+    time.sleep(0.5)
+
+    lte_abort_test(device)
+    lte_modem_off(device)
+
+    device.Disconnect()
+    analyzer.disconnect()
+
+
+    # ==== LTE OBW Test ====
+    analyzer = SpectrumAnalyzer("172.16.10.1")
+    analyzer.connect()
+
+    device = BLE_Device(0x80E1271FD8B8)
+    device.Connect()
+    analyzer.set_rbw(rbw=3, units="KHZ")
+    analyzer.set_vbw(vbw=10, units="KHZ")
+    analyzer.set_span(span=5, units="MHZ")
+    analyzer.set_center_frequency(freq=707.5, units="MHZ")
+    lte_modem_on(device)
+    lte_modulated_cw(device=device, earfcn=23095, power=2300)
+    
+    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=10.0, pct=99.0)
+    print(f"OBW @LTE = {bw_hz/1e3:.2f} kHz")
+    lte_abort_test(device)
+    lte_modem_off(device)
+
+    device.Disconnect()
+    analyzer.disconnect()
+
+    # ==== BLE Tx Power Test ====
+    analyzer = SpectrumAnalyzer("172.16.10.1")
+    analyzer.connect()
+
+    device = BLE_Device(0x80E1271FD8B8)
+    device.Connect()
+    analyzer.set_rbw(rbw=3, units="KHZ")
+    analyzer.set_vbw(vbw=10, units="KHZ")
+    analyzer.set_span(span=5, units="MHZ")
+    analyzer.set_center_frequency(freq=2402, units="MHZ")
+    ble_cw(device=device, channel=0)
+    time.sleep(1)
+
+    analyzer.peak_search()
+    peak = float(analyzer.get_marker_power())
+    print(f"Tx Power @ BLE is: {peak}dBm")
+    time.sleep(0.5)
+
+    device.Disconnect()
+    analyzer.disconnect()
 
     # ==== BLE OBW Test ====
-    # analyzer = SpectrumAnalyzer("172.16.10.1")
-    # analyzer.connect()
+    analyzer = SpectrumAnalyzer("172.16.10.1")
+    analyzer.connect()
 
-    # device = BLE_Device(0x80E1271FD8B8)
-    # device.Connect()
-    # analyzer.set_rbw(rbw=3, units="KHZ")
-    # analyzer.set_vbw(vbw=10, units="KHZ")
-    # analyzer.set_span(span=5, units="MHZ")
-    # analyzer.set_center_frequency(freq=2402, units="MHZ")
+    device = BLE_Device(0x80E1271FD8B8)
+    device.Connect()
+    analyzer.set_rbw(rbw=3, units="KHZ")
+    analyzer.set_vbw(vbw=10, units="KHZ")
+    analyzer.set_span(span=5, units="MHZ")
+    analyzer.set_center_frequency(freq=2402, units="MHZ")
 
-    # ble_modulated_cw(device=device, channel=0)
+    ble_modulated_cw(device=device, channel=0)
     
-    # bw_hz = analyzer.measure_obw_via_max_hold(duration_s=15.0, pct=99.0)
-    # print(f"OBW (MaxHold 15s) = {bw_hz/1e3:.2f} kHz")
+    bw_hz = analyzer.measure_obw_via_max_hold(duration_s=15.0, pct=99.0)
+    print(f"OBW @ BLE = {bw_hz/1e3:.2f} kHz")
     
-
-    # device.Disconnect()
-    # analyzer.disconnect()
+    device.Disconnect()
+    analyzer.disconnect()
 
     
-
-    # analyzer.disconnect()
-
-
-
-    # mac_input = input("Please enter MAC Address:\n")
-    # mac_address = parse_mac_to_hex(mac_input.strip())
-    #
-    # device = BLE_Device(mac_address)
-    # device = BLE_Device(0x80E1271FD8DD)
-    # device.Connect()
-
-    # # ble_cw(device=device, channel=0)
-    # res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
-    # print(res[1])
-
-    # device.hwtp_set(command=cmd.HWTP_SI_BLE_TX_POWER_SET, payload=struct.HWTP_BleTxPower_t(txPowerConst=25))
-    # save_and_reset(device=device)
-    
-    # device = BLE_Device(0x80E1271FD8DD)
-    # device.Connect()
-
-    # res = device.hwtp_get(command=cmd.HWTP_SI_BLE_TX_POWER_GET)
-    # # if str(res[1]) 
-    # print(str(res[1]))
-
-
-    # device.Disconnect()
-
-    # analyzer = SpectrumAnalyzer(ip_address="172.16.10.1")
-
-    # analyzer.connect()
-    # analyzer.set_span(5, "MHZ")
-    # analyzer.set_ref_level_offset(20)
-
-    # time.sleep(2)
-    # lora_cw(device=device, spectrum=analyzer, frequency=918000000, power=0, ref_offset=20)
-    # cat_m_modem_on(device=device)
-    # cat_m_cw_on(device, earfcn=18900, power=2300)
-    
-    # time.sleep(2)
-    # cat_m_abort_test(device=device)
-    # cat_m_modem_off(device=device)
 
     
 
